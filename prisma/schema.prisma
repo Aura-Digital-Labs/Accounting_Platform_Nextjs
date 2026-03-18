@@ -1,0 +1,267 @@
+// ============================================================
+// Prisma Schema — Project-Based Accounting System
+// ============================================================
+// Mirrors the existing SQLAlchemy models exactly.
+// Run `npx prisma db push` to apply or `npx prisma db pull`
+// to introspect an existing database.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ────────────────────────────── Enums ──────────────────────────────
+
+enum UserRole {
+  admin
+  employee
+  client
+  project_manager
+}
+
+enum AccountType {
+  asset
+  liability
+  equity
+  revenue
+  expense
+}
+
+enum EntryType {
+  debit
+  credit
+}
+
+enum ExpenseStatus {
+  pending
+  approved_by_pm
+  rejected_by_pm
+  approved
+  rejected
+}
+
+enum ClientPaymentStatus {
+  pending
+  approved_by_pm
+  rejected_by_pm
+  approved
+  rejected
+}
+
+// ────────────────────────────── User ──────────────────────────────
+
+model User {
+  id                  Int       @id @default(autoincrement())
+  email               String    @unique @db.VarChar(255)
+  username            String?   @unique @db.VarChar(64)
+  fullName            String    @map("full_name") @db.VarChar(255)
+  hashedPassword      String    @map("hashed_password") @db.VarChar(255)
+  role                UserRole  @default(employee)
+  isActive            Boolean   @default(true) @map("is_active")
+  pettyCashAccountId  Int?      @map("petty_cash_account_id")
+
+  // Relations
+  pettyCashAccount    Account?  @relation("UserPettyCash", fields: [pettyCashAccountId], references: [id])
+  assignments         ProjectAssignment[]
+  expenses            Expense[]           @relation("EmployeeExpenses")
+  clientPayments      ClientPayment[]     @relation("ClientPayments")
+  ownedProjects       Project[]           @relation("ProjectClient")
+  managedProjects     ProjectManagerAssignment[]
+  approvedExpenses    Expense[]           @relation("PMApprovedExpenses")
+  approvedPayments    ClientPayment[]     @relation("PMApprovedPayments")
+
+  @@index([email])
+  @@index([username])
+  @@map("users")
+}
+
+// ────────────────────────────── Account ──────────────────────────────
+
+model Account {
+  id                  Int           @id @default(autoincrement())
+  code                String        @unique @db.VarChar(20)
+  name                String        @db.VarChar(255)
+  type                AccountType
+  description         String?       @db.Text
+  projectId           Int?          @unique @map("project_id")
+  budget              Decimal?      @db.Decimal(14, 2)
+  includeCashFlow     Boolean       @default(false) @map("include_in_cash_flow")
+  isPaymentAccepting  Boolean       @default(false) @map("is_payment_accepting")
+  isPettyCash         Boolean       @default(false) @map("is_petty_cash")
+  isClosed            Boolean       @default(false) @map("is_closed")
+  closedAt            DateTime?     @map("closed_at")
+  accountNumber       String?       @map("account_number") @db.VarChar(50)
+  accountHolderName   String?       @map("account_holder_name") @db.VarChar(255)
+  bankBranch          String?       @map("bank_branch") @db.VarChar(255)
+
+  // Relations
+  entries             TransactionEntry[]
+  bankStatements      BankStatement[]
+  pettyCashUsers      User[]        @relation("UserPettyCash")
+  clientPayments      ClientPayment[] @relation("PaymentAccount")
+  linkedProject       Project?      @relation("ProjectAccount")
+
+  @@index([code])
+  @@map("accounts")
+}
+
+// ────────────────────────────── Transaction ──────────────────────────────
+
+model Transaction {
+  id            Int       @id @default(autoincrement())
+  reference     String?   @unique @db.VarChar(100)
+  description   String    @db.Text
+  createdBy     Int       @map("created_by")
+  sourceType    String?   @map("source_type") @db.VarChar(32)
+  sourceId      Int?      @map("source_id")
+  postedAt      DateTime  @default(now()) @map("posted_at")
+  documentLink  String?   @map("document_link") @db.VarChar(500)
+
+  // Relations — cascade delete entries when transaction is deleted
+  entries       TransactionEntry[]
+
+  @@map("transactions")
+}
+
+// ────────────────────────────── TransactionEntry ──────────────────────────────
+
+model TransactionEntry {
+  id              Int         @id @default(autoincrement())
+  transactionId   Int         @map("transaction_id")
+  accountId       Int         @map("account_id")
+  entryType       EntryType   @map("entry_type")
+  amount          Decimal     @db.Decimal(14, 2)
+  isChecked       Boolean     @default(false) @map("is_checked")
+
+  // Relations
+  transaction     Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  account         Account     @relation(fields: [accountId], references: [id])
+
+  @@index([transactionId])
+  @@index([accountId])
+  @@map("transaction_entries")
+}
+
+// ────────────────────────────── Project ──────────────────────────────
+
+model Project {
+  id              Int       @id @default(autoincrement())
+  code            String    @unique @db.VarChar(32)
+  name            String    @db.VarChar(255)
+  description     String?   @db.Text
+  budget          Decimal   @default(0) @db.Decimal(14, 2)
+  accountId       Int       @unique @map("account_id")
+  clientId        Int?      @unique @map("client_id")
+  clientPassword  String?   @map("client_password") @db.VarChar(255)
+
+  // Relations
+  account         Account   @relation("ProjectAccount", fields: [accountId], references: [id])
+  client          User?     @relation("ProjectClient", fields: [clientId], references: [id])
+  assignments     ProjectAssignment[]
+  expenses        Expense[]
+  payments        ClientPayment[]
+  managers        ProjectManagerAssignment[]
+
+  @@map("projects")
+}
+
+// ────────────────────────────── ProjectAssignment ──────────────────────────────
+
+model ProjectAssignment {
+  id          Int     @id @default(autoincrement())
+  projectId   Int     @map("project_id")
+  employeeId  Int     @map("employee_id")
+
+  project     Project @relation(fields: [projectId], references: [id])
+  employee    User    @relation(fields: [employeeId], references: [id])
+
+  @@unique([projectId, employeeId], name: "uq_project_employee")
+  @@map("project_assignments")
+}
+
+// ────────────────────────────── ProjectManagerAssignment ──────────────────────────────
+
+model ProjectManagerAssignment {
+  id          Int     @id @default(autoincrement())
+  projectId   Int     @map("project_id")
+  managerId   Int     @map("manager_id")
+
+  project     Project @relation(fields: [projectId], references: [id])
+  manager     User    @relation(fields: [managerId], references: [id])
+
+  @@unique([projectId, managerId], name: "uq_project_manager")
+  @@map("project_manager_assignments")
+}
+
+// ────────────────────────────── Expense ──────────────────────────────
+
+model Expense {
+  id                    Int           @id @default(autoincrement())
+  projectId             Int           @map("project_id")
+  employeeId            Int           @map("employee_id")
+  description           String        @db.Text
+  amount                Decimal       @db.Decimal(14, 2)
+  expenseDate           DateTime      @map("expense_date") @db.Date
+  receiptPath           String?       @map("receipt_path") @db.VarChar(500)
+  paymentSource         String        @default("personal") @map("payment_source") @db.VarChar(32)
+  status                ExpenseStatus @default(pending)
+  createdTransactionId  Int?          @map("created_transaction_id")
+  approvedByPmId        Int?          @map("approved_by_pm_id")
+  finalExpenseAmount    Decimal?      @map("final_expense_amount") @db.Decimal(14, 2)
+  pmApprovalDate        DateTime?     @map("pm_approval_date")
+  pmApprovalNotes       String?       @map("pm_approval_notes") @db.Text
+
+  // Relations
+  project               Project       @relation(fields: [projectId], references: [id])
+  employee              User          @relation("EmployeeExpenses", fields: [employeeId], references: [id])
+  approvedByPm          User?         @relation("PMApprovedExpenses", fields: [approvedByPmId], references: [id])
+
+  @@map("expenses")
+}
+
+// ────────────────────────────── ClientPayment ──────────────────────────────
+
+model ClientPayment {
+  id                    Int                   @id @default(autoincrement())
+  projectId             Int                   @map("project_id")
+  clientId              Int                   @map("client_id")
+  paymentAccountId      Int                   @map("payment_account_id")
+  description           String?               @db.Text
+  documentLink          String?               @map("document_link") @db.VarChar(500)
+  amount                Decimal               @db.Decimal(14, 2)
+  paymentDate           DateTime              @map("payment_date") @db.Date
+  status                ClientPaymentStatus   @default(pending)
+  createdTransactionId  Int?                  @map("created_transaction_id")
+  approvedByPmId        Int?                  @map("approved_by_pm_id")
+  pmApprovalDate        DateTime?             @map("pm_approval_date")
+  pmApprovalNotes       String?               @map("pm_approval_notes") @db.Text
+
+  // Relations
+  project               Project               @relation(fields: [projectId], references: [id])
+  client                User                  @relation("ClientPayments", fields: [clientId], references: [id])
+  paymentAccount        Account               @relation("PaymentAccount", fields: [paymentAccountId], references: [id])
+  approvedByPm          User?                 @relation("PMApprovedPayments", fields: [approvedByPmId], references: [id])
+
+  @@map("client_payments")
+}
+
+// ────────────────────────────── BankStatement ──────────────────────────────
+
+model BankStatement {
+  id            Int       @id @default(autoincrement())
+  accountId     Int       @map("account_id")
+  month         String    @db.VarChar(7) // Format: YYYY-MM
+  statementLink String    @map("statement_link") @db.VarChar(500)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  account       Account   @relation(fields: [accountId], references: [id])
+
+  @@map("bank_statements")
+}

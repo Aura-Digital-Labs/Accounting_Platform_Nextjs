@@ -1,0 +1,637 @@
+.page {
+  background: #f9f9fb;
+  min-height: 100%;
+  display: grid;
+  gap: 1rem;
+  padding-bottom: 1rem;
+}
+
+.headerCard,
+.card {
+  background: #ffffff;
+  border: 1px solid #e9edf5;
+  border-radius: 14px;
+  box-shadow: 0 8px 20px rgba(17, 24, 39, 0.05);
+  padding: 1rem;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.38);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 80;
+}
+
+.modalPanel,
+.modalPanelWide {
+  width: min(760px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: #ffffff;
+  border: 1px solid #e9edf5;
+  border-radius: 14px;
+  box-shadow: 0 24px 55px rgba(15, 23, 42, 0.22);
+}
+
+.modalPanelWide {
+  width: min(980px, 100%);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid #e9edf5;
+}
+
+.modalTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #0f172a;
+}
+
+.modalBody {
+  padding: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.pageTitle {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.5rem;
+}
+
+.pageSubtitle {
+  margin-top: 0.3rem;
+  margin-bottom: 0;
+  color: #475569;
+}
+
+.sectionTitle {
+  margin: 0 0 0.8rem;
+  color: #0f172a;
+  font-size: 1.05rem;
+}
+
+.subTitle {
+  margin: 1rem 0 0.6rem;
+  color: #0f172a;
+  font-size: 0.95rem;
+}
+
+.errorText,
+.successText {
+  margin: 0;
+  font-size: 0.9rem;
+  border-radius: 10px;
+  padding: 0.6rem 0.7rem;
+}
+
+.errorText {
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+}
+
+.successText {
+  color: #166534;
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+}
+
+.twoColumnGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.buttonGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.primaryButton,
+.secondaryButton {
+  border-radius: 10px;
+  padding: 0.62rem 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryButton {
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.primaryButton:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.secondaryButton {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #1f2937;
+}
+
+.secondaryButton:hover {
+  background: #f8fafc;
+}
+
+.inlineForm {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.inlineCard {
+  margin-top: 0.75rem;
+  border: 1px solid #e6ebf3;
+  border-radius: 12px;
+  background: #fbfdff;
+  padding: 0.8rem;
+}
+
+.inlineGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid #d4dce9;
+  border-radius: 10px;
+  padding: 0.62rem 0.72rem;
+  font-size: 0.9rem;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.label {
+  display: grid;
+  gap: 0.35rem;
+  color: #334155;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.helperText {
+  margin: 0.65rem 0 0;
+  color: #475569;
+  font-size: 0.86rem;
+}
+
+.emptyState {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.92rem;
+}
+
+.healthRows {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.healthRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border: 1px solid #e6ebf3;
+  border-radius: 10px;
+  padding: 0.6rem 0.7rem;
+  background: #f8fbff;
+}
+
+.passPill,
+.failPill {
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.passPill {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.failPill {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.metricGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin-bottom: 0.8rem;
+}
+
+.metricCard {
+  border: 1px solid #e6ebf3;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 0.7rem;
+}
+
+.metricLabel {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.84rem;
+}
+
+.metricValue {
+  margin: 0.35rem 0 0;
+  color: #0f172a;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.checkboxRow {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  color: #334155;
+  font-size: 0.86rem;
+}
+
+.selectionBox {
+  border: 1px solid #d4dce9;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.65rem;
+  display: grid;
+  gap: 0.45rem;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.selectionItem {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.86rem;
+  color: #1f2937;
+}
+
+.tableWrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid #e9edf5;
+  padding: 0.6rem 0.55rem;
+  text-align: left;
+  font-size: 0.87rem;
+  color: #1f2937;
+}
+
+.table th {
+  background: #f8fbff;
+  color: #334155;
+  font-weight: 700;
+}
+
+.tableCellTop {
+  vertical-align: top;
+}
+
+.emptyCell {
+  text-align: center;
+  padding: 1rem 0.75rem;
+  color: #64748b;
+}
+
+.numericCell {
+  text-align: right !important;
+}
+
+.finalTotalCell {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.pendingGroupCount {
+  margin: 0 0 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+}
+
+.statusBlockRow {
+  display: grid;
+  gap: 0.45rem;
+  margin-bottom: 0.7rem;
+}
+
+.reviewDetailsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.7rem;
+  margin-bottom: 0.7rem;
+}
+
+.reviewDetailsGrid p {
+  margin: 0;
+  color: #334155;
+  font-size: 0.86rem;
+}
+
+.actionsRowSimple {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+}
+
+.bankHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.statusExpired,
+.statusUpdated {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.statusExpired {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.statusUpdated {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.monthTimeline {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 0.24rem;
+  min-width: 360px;
+}
+
+.monthBox {
+  width: 1.7rem;
+  height: 1.7rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border: 1px solid #f87171;
+  background: #fee2e2;
+  color: #b91c1c;
+  border-radius: 6px;
+}
+
+.monthBoxCurrent {
+  border: 2px solid #2563eb;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.22);
+}
+
+.monthBoxUploaded {
+  background: #dcfce7;
+  border-color: #22c55e;
+  color: #166534;
+}
+
+.uploadDropZone {
+  border: 2px dashed #cfd8e6;
+  border-radius: 12px;
+  padding: 1rem;
+  display: grid;
+  gap: 0.2rem;
+  cursor: pointer;
+  background: #fbfdff;
+}
+
+.uploadDropZone:hover {
+  border-color: #93c5fd;
+  background: #f8fbff;
+}
+
+.hiddenFileInput {
+  display: none;
+}
+
+.uploadDropTitle {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.uploadDropSubtitle {
+  color: #64748b;
+  font-size: 0.84rem;
+}
+
+.uploadFileName {
+  color: #1d4ed8;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.pendingLineDescription {
+  margin: 0;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.pendingLineMeta {
+  margin: 0.2rem 0 0;
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.pmStatusPill {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.pmStatusPending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.pmStatusInReview {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.pmStatusApproved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.pmStatusDeclined {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.pendingActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.actionButtonSm {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.34rem 0.55rem;
+  font-size: 0.77rem;
+  font-weight: 700;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.reviewButton {
+  background: #2563eb;
+}
+
+.reviewButton:hover {
+  background: #1d4ed8;
+}
+
+.approveButton {
+  background: #059669;
+}
+
+.approveButton:hover {
+  background: #047857;
+}
+
+.declineButton {
+  background: #dc2626;
+}
+
+.declineButton:hover {
+  background: #b91c1c;
+}
+
+.grandTotalRow td {
+  background: #f8fafc;
+  border-top: 2px solid #d9e2f2;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.groupTotalRow td {
+  background: #f8fbff;
+  border-top: 1px dashed #cfd8e6;
+  color: #1f2937;
+  font-weight: 700;
+}
+
+.groupTotalLabel {
+  color: #334155;
+}
+
+.groupTotalValue {
+  color: #0f172a;
+}
+
+.accountLink {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.accountLink:hover {
+  text-decoration: underline;
+}
+
+.transactionForm {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.actionsRow {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+}
+
+@media (max-width: 1100px) {
+  .buttonGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metricGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .inlineGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .twoColumnGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .transactionForm,
+  .inlineForm,
+  .inlineGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .reviewDetailsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .bankHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .buttonGrid {
+    grid-template-columns: 1fr;
+  }
+}

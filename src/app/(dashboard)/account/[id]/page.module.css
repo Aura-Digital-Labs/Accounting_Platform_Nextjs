@@ -1,0 +1,282 @@
+.page {
+  background: #f9f9fb;
+  min-height: 100%;
+  display: grid;
+  gap: 1rem;
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #e9edf5;
+  border-radius: 14px;
+  box-shadow: 0 8px 20px rgba(17, 24, 39, 0.05);
+  padding: 1rem;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.38);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 90;
+}
+
+.modalPanel {
+  width: min(760px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: #ffffff;
+  border: 1px solid #e9edf5;
+  border-radius: 14px;
+  box-shadow: 0 24px 55px rgba(15, 23, 42, 0.22);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid #e9edf5;
+}
+
+.modalTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #0f172a;
+}
+
+.modalBody {
+  padding: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.3rem;
+}
+
+.subtitle {
+  margin-top: 0.3rem;
+  margin-bottom: 0;
+  color: #475569;
+}
+
+.topActions {
+  margin-top: 0.85rem;
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.primaryButton,
+.secondaryButton {
+  border-radius: 10px;
+  padding: 0.58rem 0.82rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryButton {
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+.primaryButton:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #1f2937;
+}
+
+.secondaryButton:hover {
+  background: #f8fafc;
+}
+
+.statusBlock {
+  margin-top: 0.8rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.successText,
+.errorText {
+  margin: 0;
+  border-radius: 10px;
+  padding: 0.58rem 0.68rem;
+  font-size: 0.88rem;
+}
+
+.successText {
+  color: #166534;
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+}
+
+.errorText {
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+}
+
+.inlineForm {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.label {
+  display: grid;
+  gap: 0.35rem;
+  color: #334155;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid #d4dce9;
+  border-radius: 10px;
+  padding: 0.6rem 0.72rem;
+  font-size: 0.9rem;
+  color: #0f172a;
+  background: #fff;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.backLink {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.empty {
+  margin: 0;
+  color: #64748b;
+}
+
+.tableWrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 780px;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid #e9edf5;
+  padding: 0.6rem 0.55rem;
+  text-align: left;
+  font-size: 0.87rem;
+  color: #1f2937;
+}
+
+.table th {
+  background: #f8fbff;
+  color: #334155;
+  font-weight: 700;
+}
+
+.carriedRow td {
+  font-weight: 700;
+  background: #f8fbff;
+  color: #1f3b68;
+}
+
+.expandButton {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e3a8a;
+  border-radius: 8px;
+  width: 1.9rem;
+  height: 1.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.expandButton:hover {
+  background: #eff6ff;
+}
+
+.checkedRow td {
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.differenceRow td {
+  font-weight: 700;
+  background: #f8fafc;
+  color: #0f172a;
+  border-top: 2px solid #d9e2f2;
+}
+
+.docLink {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.docLink:hover {
+  text-decoration: underline;
+}
+
+.editTransactionForm {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.editGrid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.9fr 0.9fr;
+  gap: 0.55rem;
+}
+
+.actionsRow {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+@media (max-width: 900px) {
+  .inlineForm {
+    grid-template-columns: 1fr;
+  }
+
+  .editGrid {
+    grid-template-columns: 1fr;
+  }
+}
