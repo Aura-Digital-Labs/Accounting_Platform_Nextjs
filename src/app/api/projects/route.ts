@@ -194,21 +194,28 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      projects.map((p) => ({
-        id: p.id,
-        code: p.code,
-        name: p.name,
-        description: p.description,
-        budget: Number(p.budget),
-        account_id: p.accountId,
-        client_id: p.clientId,
-        client_username: "client" in p && p.client ? p.client.username : null,
-        client_password: currentUser.role === "admin" ? p.clientPassword : null,
-        employee_ids:
-          currentUser.role === "admin" && "assignments" in p && Array.isArray(p.assignments)
-            ? p.assignments.map((row: { employeeId: number }) => row.employeeId)
-            : [],
-      }))
+      projects.map((p) => {
+        const projectWithClient = p as typeof p & {
+          client?: { username: string | null } | null;
+          assignments?: Array<{ employeeId: number }>;
+        };
+
+        return {
+          id: p.id,
+          code: p.code,
+          name: p.name,
+          description: p.description,
+          budget: Number(p.budget),
+          account_id: p.accountId,
+          client_id: p.clientId,
+          client_username: projectWithClient.client?.username ?? null,
+          client_password: currentUser.role === "admin" ? p.clientPassword : null,
+          employee_ids:
+            currentUser.role === "admin"
+              ? (projectWithClient.assignments ?? []).map((row) => row.employeeId)
+              : [],
+        };
+      })
     );
   } catch (error: unknown) {
     if (error instanceof AuthError) {
