@@ -79,7 +79,17 @@ type ExpenseRow = {
 
 type PaymentRow = {
   id: number;
+  project_id: number;
+  client_id: number;
+  project_name: string;
+  client_name: string | null;
+  payment_account_id: number;
+  amount: number;
+  payment_date: string;
+  description: string | null;
+  document_link: string | null;
   status: "pending" | "approved_by_pm" | "approved" | "rejected" | "rejected_by_pm";
+  pm_approval_notes: string | null;
 };
 
 type ProjectManagerRow = {
@@ -400,7 +410,7 @@ export default function AdminDashboard({ displayName }: { displayName: string })
   }, [pendingExpenses, data.users, data.projects]);
 
   const pendingPayments = useMemo(
-    () => data.payments.filter((p) => p.status === "pending" || p.status === "approved_by_pm"),
+    () => data.payments.filter((p) => p.status === "approved_by_pm"),
     [data.payments]
   );
 
@@ -791,6 +801,38 @@ export default function AdminDashboard({ displayName }: { displayName: string })
     }
   };
 
+  const decideClientPayment = async (
+    paymentId: number,
+    status: "approved" | "rejected"
+  ) => {
+    clearStatus();
+
+    try {
+      const res = await fetch(`/api/client-payments/${paymentId}/decision`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+
+      if (!res.ok) {
+        const payload = (await res.json()) as { detail?: string };
+        throw new Error(payload.detail || "Failed to decide client payment");
+      }
+
+      setSuccess(
+        status === "approved"
+          ? `Client payment #${paymentId} approved and posted to accounts.`
+          : `Client payment #${paymentId} rejected.`
+      );
+      await loadData();
+    } catch (decisionError) {
+      setError(
+        decisionError instanceof Error ? decisionError.message : "Failed to decide client payment"
+      );
+    }
+  };
+
   return (
     <div className={styles.page}>
       <header className={styles.headerCard}>
@@ -914,21 +956,50 @@ export default function AdminDashboard({ displayName }: { displayName: string })
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Pending Client Payments</h2>
         {pendingPayments.length === 0 ? (
-          <p className={styles.emptyState}>No pending client payments</p>
+          <p className={styles.emptyState}>No PM-approved client payments pending admin decision</p>
         ) : (
           <div className={styles.tableWrap}>
             <table className={styles.table}>
               <thead>
                 <tr>
                   <th>ID</th>
+                  <th>Date</th>
+                  <th>Project</th>
+                  <th>Client</th>
+                  <th className={styles.numericCell}>Amount</th>
+                  <th>PM Notes</th>
                   <th>Status</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {pendingPayments.map((payment) => (
                   <tr key={payment.id}>
                     <td>{payment.id}</td>
+                    <td>{new Date(payment.payment_date).toLocaleDateString()}</td>
+                    <td>{payment.project_name}</td>
+                    <td>{payment.client_name || `Client #${payment.client_id}`}</td>
+                    <td className={styles.numericCell}>{formatCurrency(payment.amount)}</td>
+                    <td>{payment.pm_approval_notes || "-"}</td>
                     <td>{payment.status}</td>
+                    <td>
+                      <div className={styles.pendingActions}>
+                        <button
+                          type="button"
+                          className={`${styles.actionButtonSm} ${styles.approveButton}`}
+                          onClick={() => decideClientPayment(payment.id, "approved")}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          className={`${styles.actionButtonSm} ${styles.declineButton}`}
+                          onClick={() => decideClientPayment(payment.id, "rejected")}
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

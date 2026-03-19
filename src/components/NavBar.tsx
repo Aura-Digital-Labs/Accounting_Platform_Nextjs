@@ -30,6 +30,22 @@ export default function NavBar() {
         <Link href="/" className={pathname === "/" ? styles.active : ""}>
           Dashboard
         </Link>
+        {session.user.role === "client" && (
+          <Link
+            href="/client/payments"
+            className={pathname === "/client/payments" ? styles.active : ""}
+          >
+            Payments
+          </Link>
+        )}
+        {(session.user.role === "employee" || session.user.role === "project_manager") && (
+          <Link
+            href="/expenses/submit"
+            className={pathname === "/expenses/submit" ? styles.active : ""}
+          >
+            Expenses
+          </Link>
+        )}
         {session.user.role === "admin" && (
           <Link
             href="/accounts/closed"

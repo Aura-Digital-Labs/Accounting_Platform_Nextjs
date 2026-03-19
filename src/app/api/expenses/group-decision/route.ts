@@ -44,9 +44,35 @@ async function getComponentProfitAccount() {
   return account;
 }
 
+async function getExpenseCreditAccount(expense: { employeeId: number; paymentSource: string }) {
+  const submitter = await prisma.user.findUnique({ where: { id: expense.employeeId } });
+  if (!submitter) {
+    throw new AccountingError(404, "Expense submitter not found");
+  }
+
+  if (expense.paymentSource === "petty_cash") {
+    if (!submitter.pettyCashAccountId) {
+      throw new AccountingError(400, "Submitter has no petty cash account");
+    }
+
+    const pettyCashAccount = await prisma.account.findUnique({
+      where: { id: submitter.pettyCashAccountId },
+    });
+
+    if (!pettyCashAccount) {
+      throw new AccountingError(404, "Petty cash account not found");
+    }
+
+    return pettyCashAccount;
+  }
+
+  return getEmployeeAccount(expense.employeeId);
+}
+
 /**
  * PATCH /api/expenses/group-decision
- * Admin decides an expense group (approve/reject) and posts grouped accounting entries.
+ * Admin decides an expense group (approve/reject).
+ * For approvals, posts per-expense transactions (no aggregated entry merging).
  */
 export async function PATCH(req: NextRequest) {
   try {
@@ -55,10 +81,15 @@ export async function PATCH(req: NextRequest) {
 
     const status = body.status as "approved" | "rejected";
     const expenseIds = Array.isArray(body.expense_ids)
-      ? body.expense_ids.map((id: unknown) => Number(id)).filter((id: number) => Number.isFinite(id))
+      ? body.expense_ids
+          .map((id: unknown) => Number(id))
+          .filter((id: number) => Number.isFinite(id))
       : [];
 
-    if (!["approved", "rejected"].includes(status)) {
+    if (![
+      "approved",
+      "rejected",
+    ].includes(status)) {
       return NextResponse.json({ detail: "Invalid status" }, { status: 400 });
     }
 
@@ -75,7 +106,9 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ detail: "One or more expenses were not found" }, { status: 404 });
     }
 
-    const invalid = expenses.find((expense) => expense.status !== "pending" && expense.status !== "approved_by_pm");
+    const invalid = expenses.find((expense) =>
+      expense.status !== "pending" && expense.status !== "approved_by_pm"
+    );
     if (invalid) {
       return NextResponse.json(
         { detail: `Expense #${invalid.id} has already been processed` },
@@ -119,139 +152,123 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ detail: "One or more project accounts were not found" }, { status: 404 });
     }
 
-    const originalTotal = expenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
-    const finalTotal = expenses.reduce((sum, expense) => {
-      const finalAmount = expense.finalExpenseAmount ? Number(expense.finalExpenseAmount) : Number(expense.amount);
-      return sum + finalAmount;
-    }, 0);
+    const profitAccount = await getComponentProfitAccount();
+    let originalTotal = 0;
+    let finalTotal = 0;
+    let totalProfit = 0;
 
-    if (finalTotal < originalTotal) {
-      return NextResponse.json(
-        { detail: "Final total cannot be less than original total" },
-        { status: 400 }
-      );
-    }
+    const baseTransactionIds: number[] = [];
+    const profitTransactionIds: number[] = [];
 
-    const projectOriginalMap = new Map<number, number>();
-    const projectProfitMap = new Map<number, number>();
+    for (const expense of expenses) {
+      const project = projectById.get(expense.projectId);
+      if (!project) {
+        throw new AccountingError(404, "Project not found");
+      }
 
-    expenses.forEach((expense) => {
-      const original = Number(expense.amount);
-      const finalAmount = expense.finalExpenseAmount ? Number(expense.finalExpenseAmount) : original;
-      const profit = finalAmount - original;
+      const projectAccount = accountById.get(project.accountId);
+      if (!projectAccount) {
+        throw new AccountingError(404, "Project account not found");
+      }
 
-      projectOriginalMap.set(expense.projectId, (projectOriginalMap.get(expense.projectId) || 0) + original);
-      projectProfitMap.set(expense.projectId, (projectProfitMap.get(expense.projectId) || 0) + profit);
-    });
-
-    const employeeAccount = await getEmployeeAccount(employeeId);
-    const firstExpense = expenses[0];
-    const postedAt = new Date(
-      firstExpense.expenseDate.getFullYear(),
-      firstExpense.expenseDate.getMonth(),
-      firstExpense.expenseDate.getDate()
-    );
-    const documentLink = expenses.find((expense) => expense.receiptPath)?.receiptPath || null;
-
-    const baseEntries: { accountId: number; entryType: "debit" | "credit"; amount: number }[] =
-      Array.from(projectOriginalMap.entries()).map(([projectId, amount]) => {
-      const project = projectById.get(projectId);
-      if (!project) throw new AccountingError(404, "Project not found");
-      const account = accountById.get(project.accountId);
-      if (!account) throw new AccountingError(404, "Project account not found");
-
-      return {
-        accountId: account.id,
-        entryType: "debit" as const,
-        amount: Number(amount.toFixed(2)),
-      };
-    });
-
-    baseEntries.push({
-      accountId: employeeAccount.id,
-      entryType: "credit",
-      amount: Number(originalTotal.toFixed(2)),
-    });
-
-    const baseTx = await createTransaction(
-      {
-        description: `Expense group approval (${expenses.length} items) - base`,
-        sourceType: "expense_group",
-        sourceId: expenses[0].id,
-        documentLink,
-        entries: baseEntries,
-      },
-      currentUser.id
-    );
-
-    await prisma.transaction.update({
-      where: { id: baseTx.id },
-      data: { postedAt },
-    });
-
-    const totalProfit = Number((finalTotal - originalTotal).toFixed(2));
-    let profitTransactionId: number | null = null;
-
-    if (totalProfit > 0) {
-      const profitAccount = await getComponentProfitAccount();
-
-      const profitEntries: { accountId: number; entryType: "debit" | "credit"; amount: number }[] =
-        Array.from(projectProfitMap.entries())
-          .filter(([, amount]) => amount > 0)
-          .map(([projectId, amount]) => {
-          const project = projectById.get(projectId);
-          if (!project) throw new AccountingError(404, "Project not found");
-          const account = accountById.get(project.accountId);
-          if (!account) throw new AccountingError(404, "Project account not found");
-
-          return {
-            accountId: account.id,
-            entryType: "debit" as const,
-            amount: Number(amount.toFixed(2)),
-          };
+      if (projectAccount.type !== "asset") {
+        await prisma.account.update({
+          where: { id: projectAccount.id },
+          data: { type: "asset" },
         });
+      }
 
-      profitEntries.push({
-        accountId: profitAccount.id,
-        entryType: "credit",
-        amount: totalProfit,
+      const creditAccount = await getExpenseCreditAccount({
+        employeeId: expense.employeeId,
+        paymentSource: expense.paymentSource,
       });
 
-      const profitTx = await createTransaction(
+      const originalAmount = Number(expense.amount);
+      const finalAmount = expense.finalExpenseAmount
+        ? Number(expense.finalExpenseAmount)
+        : originalAmount;
+
+      if (finalAmount < originalAmount) {
+        return NextResponse.json(
+          { detail: `Final amount cannot be less than original amount for expense #${expense.id}` },
+          { status: 400 }
+        );
+      }
+
+      const profitAmount = Number((finalAmount - originalAmount).toFixed(2));
+      originalTotal += originalAmount;
+      finalTotal += finalAmount;
+      totalProfit += profitAmount;
+
+      const projectLabel = project.name || `Project ${project.id}`;
+      const expenseLabel = (expense.description || "Expense").trim();
+      const postedAt = new Date(
+        expense.expenseDate.getFullYear(),
+        expense.expenseDate.getMonth(),
+        expense.expenseDate.getDate()
+      );
+
+      const baseTx = await createTransaction(
         {
-          description: `Expense group approval (${expenses.length} items) - component profit`,
-          sourceType: "expense_group_profit",
-          sourceId: expenses[0].id,
-          documentLink,
-          entries: profitEntries,
+          description: `${projectLabel} expense #${expense.id} - counter ${creditAccount.code} (${expenseLabel})`,
+          sourceType: "expense_group_item",
+          sourceId: expense.id,
+          documentLink: expense.receiptPath,
+          entries: [
+            { accountId: project.accountId, entryType: "debit", amount: originalAmount },
+            { accountId: creditAccount.id, entryType: "credit", amount: originalAmount },
+          ],
         },
         currentUser.id
       );
 
       await prisma.transaction.update({
-        where: { id: profitTx.id },
+        where: { id: baseTx.id },
         data: { postedAt },
       });
 
-      profitTransactionId = profitTx.id;
-    }
+      baseTransactionIds.push(baseTx.id);
 
-    await prisma.expense.updateMany({
-      where: { id: { in: expenseIds } },
-      data: {
-        status: "approved",
-        createdTransactionId: baseTx.id,
-      },
-    });
+      await prisma.expense.update({
+        where: { id: expense.id },
+        data: {
+          status: "approved",
+          createdTransactionId: baseTx.id,
+        },
+      });
+
+      if (profitAmount > 0) {
+        const profitTx = await createTransaction(
+          {
+            description: `${projectLabel} expense #${expense.id} - counter ${profitAccount.code} (${expenseLabel})`,
+            sourceType: "expense_group_item_profit",
+            sourceId: expense.id,
+            documentLink: expense.receiptPath,
+            entries: [
+              { accountId: project.accountId, entryType: "debit", amount: profitAmount },
+              { accountId: profitAccount.id, entryType: "credit", amount: profitAmount },
+            ],
+          },
+          currentUser.id
+        );
+
+        await prisma.transaction.update({
+          where: { id: profitTx.id },
+          data: { postedAt },
+        });
+
+        profitTransactionIds.push(profitTx.id);
+      }
+    }
 
     return NextResponse.json({
       status: "approved",
       expense_ids: expenseIds,
       original_total: Number(originalTotal.toFixed(2)),
       final_total: Number(finalTotal.toFixed(2)),
-      profit_total: totalProfit,
-      base_transaction_id: baseTx.id,
-      profit_transaction_id: profitTransactionId,
+      profit_total: Number(totalProfit.toFixed(2)),
+      base_transaction_ids: baseTransactionIds,
+      profit_transaction_ids: profitTransactionIds,
     });
   } catch (error: unknown) {
     if (error instanceof AuthError) {

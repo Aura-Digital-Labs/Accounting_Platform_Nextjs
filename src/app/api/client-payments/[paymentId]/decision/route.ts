@@ -21,9 +21,9 @@ export async function PATCH(
       return NextResponse.json({ detail: "Payment not found" }, { status: 404 });
     }
 
-    if (payment.status !== "pending" && payment.status !== "approved_by_pm") {
+    if (payment.status !== "approved_by_pm") {
       return NextResponse.json(
-        { detail: "Payment has already been processed" },
+        { detail: "Payment must be reviewed by PM before admin decision" },
         { status: 400 }
       );
     }

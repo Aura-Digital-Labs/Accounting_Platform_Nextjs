@@ -1,0 +1,146 @@
+.page {
+  background: #f9f9fb;
+  min-height: 100%;
+  display: grid;
+  gap: 1rem;
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #e9edf5;
+  border-radius: 14px;
+  box-shadow: 0 8px 20px rgba(17, 24, 39, 0.05);
+  padding: 1rem;
+}
+
+.title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.3rem;
+}
+
+.metaGrid {
+  margin-top: 0.8rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.metaLabel {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.metaValue {
+  margin: 0.2rem 0 0;
+  color: #0f172a;
+  font-size: 0.96rem;
+  font-weight: 700;
+}
+
+.empty {
+  margin: 1rem 0 0;
+  color: #64748b;
+}
+
+.tableWrap {
+  margin-top: 1rem;
+  width: 100%;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid #e9edf5;
+  padding: 0.62rem 0.55rem;
+  text-align: left;
+  font-size: 0.88rem;
+  color: #1f2937;
+}
+
+.table th {
+  background: #f8fbff;
+  color: #334155;
+  font-weight: 700;
+}
+
+.table tfoot td {
+  font-weight: 700;
+  border-top: 2px solid #d9e2f2;
+  color: #0f172a;
+  background: #f8fafc;
+}
+
+.summaryGrid {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.summaryCard {
+  border: 1px solid #e9edf5;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 0.72rem 0.8rem;
+}
+
+.summaryValue {
+  margin: 0.25rem 0 0;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.linksRow {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.linkButton,
+.linkButtonSecondary {
+  border-radius: 10px;
+  padding: 0.58rem 0.82rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.linkButton {
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+.linkButton:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.linkButtonSecondary {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #1f2937;
+}
+
+.linkButtonSecondary:hover {
+  background: #f8fafc;
+}
+
+@media (max-width: 900px) {
+  .metaGrid,
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+}

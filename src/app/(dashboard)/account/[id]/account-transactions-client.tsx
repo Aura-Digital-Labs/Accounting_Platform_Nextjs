@@ -13,6 +13,7 @@ type AccountRow = {
   name: string;
   type: AccountType;
   description: string | null;
+  projectId: number | null;
   isClosed: boolean;
 };
 
@@ -366,6 +367,11 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
           {account.code} - {account.name}
         </p>
         <div className={styles.topActions}>
+          {account.projectId !== null && (
+            <Link href={`/account/${accountId}/invoice`} className={styles.primaryButton}>
+              Generate Invoice
+            </Link>
+          )}
           <button className={styles.primaryButton} type="button" onClick={() => setEditingAccount((v) => !v)}>
             Edit Account
           </button>

@@ -13,5 +13,5 @@ export default async function ExpenseSubmitPage() {
     redirect("/");
   }
 
-  return <EmployeeExpenseSubmission />;
+  return <EmployeeExpenseSubmission role={session.user.role} />;
 }

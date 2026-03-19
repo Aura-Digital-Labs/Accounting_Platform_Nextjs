@@ -18,39 +18,49 @@ datasource db {
 // ────────────────────────────── Enums ──────────────────────────────
 
 enum UserRole {
-  admin
-  employee
-  client
-  project_manager
+  admin           @map("ADMIN")
+  employee        @map("EMPLOYEE")
+  client          @map("CLIENT")
+  project_manager @map("PROJECT_MANAGER")
+
+  @@map("userrole")
 }
 
 enum AccountType {
-  asset
-  liability
-  equity
-  revenue
-  expense
+  asset     @map("ASSET")
+  liability @map("LIABILITY")
+  equity    @map("EQUITY")
+  revenue   @map("REVENUE")
+  expense   @map("EXPENSE")
+
+  @@map("accounttype")
 }
 
 enum EntryType {
-  debit
-  credit
+  debit @map("DEBIT")
+  credit @map("CREDIT")
+
+  @@map("entrytype")
 }
 
 enum ExpenseStatus {
-  pending
-  approved_by_pm
-  rejected_by_pm
-  approved
-  rejected
+  pending        @map("PENDING")
+  approved_by_pm @map("APPROVED_BY_PM")
+  rejected_by_pm @map("REJECTED_BY_PM")
+  approved       @map("APPROVED")
+  rejected       @map("REJECTED")
+
+  @@map("expensestatus")
 }
 
 enum ClientPaymentStatus {
-  pending
-  approved_by_pm
-  rejected_by_pm
-  approved
-  rejected
+  pending        @map("PENDING")
+  approved_by_pm @map("APPROVED_BY_PM")
+  rejected_by_pm @map("REJECTED_BY_PM")
+  approved       @map("APPROVED")
+  rejected       @map("REJECTED")
+
+  @@map("clientpaymentstatus")
 }
 
 // ────────────────────────────── User ──────────────────────────────

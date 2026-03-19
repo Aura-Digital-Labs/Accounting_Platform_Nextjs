@@ -20,6 +20,14 @@ export default async function DashboardPage() {
     redirect("/expenses/submit");
   }
 
+  if (role === "client") {
+    redirect("/client/payments");
+  }
+
+  if (role === "project_manager") {
+    redirect("/expenses/submit");
+  }
+
   return (
     <div>
       <h1>Welcome back, {name}</h1>
