@@ -8,8 +8,8 @@ import styles from "./AdminDashboard.module.css";
 export type PMReviewStatus = "Pending" | "In Review" | "Approved" | "Declined";
 
 export type ExpenseLineItem = {
-  id: number;
-  expenseId: number;
+  id: string;
+  expenseId: string;
   project: string;
   reviewLabel?: string;
   amountOriginal: number;
@@ -17,7 +17,7 @@ export type ExpenseLineItem = {
 };
 
 export type PendingExpenseGroup = {
-  id: number;
+  id: string;
   date: string;
   employer: string;
   description: string;
@@ -30,11 +30,12 @@ export type PendingExpenseGroup = {
 type PendingExpensesTableProps = {
   expenses: PendingExpenseGroup[];
   onUpdated?: () => void | Promise<void>;
+  readOnly?: boolean;
 };
 
 type ReviewTarget = {
-  groupId: number;
-  expenseId: number;
+  groupId: string;
+  expenseId: string;
   project: string;
   date: string;
   employer: string;
@@ -46,7 +47,7 @@ type ReviewTarget = {
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency: "LKR",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
@@ -61,7 +62,7 @@ async function parseError(res: Response) {
   }
 }
 
-export default function PendingExpensesTable({ expenses, onUpdated }: PendingExpensesTableProps) {
+export default function PendingExpensesTable({ expenses, onUpdated, readOnly = false }: PendingExpensesTableProps) {
   const [reviewTarget, setReviewTarget] = useState<ReviewTarget | null>(null);
   const [reviewFinalAmount, setReviewFinalAmount] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
@@ -129,7 +130,7 @@ export default function PendingExpensesTable({ expenses, onUpdated }: PendingExp
     }
   };
 
-  const handleGroupDecision = async (groupId: number, status: "approved" | "rejected") => {
+  const handleGroupDecision = async (groupId: string, status: "approved" | "rejected") => {
     clearStatus();
     const group = groupsWithTotals.find((item) => item.id === groupId);
     if (!group) {
@@ -257,14 +258,14 @@ export default function PendingExpensesTable({ expenses, onUpdated }: PendingExp
               <th className={styles.numericCell}>Total Original</th>
               <th className={styles.numericCell}>Total Final</th>
               <th>PM Review Status</th>
-              <th>Actions</th>
+              {!readOnly && <th>Actions</th>}
             </tr>
           </thead>
 
           <tbody>
             {groupsWithTotals.length === 0 ? (
               <tr>
-                <td colSpan={9} className={styles.emptyCell}>
+                <td colSpan={readOnly ? 8 : 9} className={styles.emptyCell}>
                   No pending expenses found.
                 </td>
               </tr>
@@ -329,50 +330,52 @@ export default function PendingExpensesTable({ expenses, onUpdated }: PendingExp
                           </td>
                         )}
 
-                        <td className={styles.tableCellTop}>
-                          <div className={styles.pendingActions}>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleReview({
-                                  groupId: group.id,
-                                  expenseId: lineItem.expenseId,
-                                  project: lineItem.project,
-                                  date: group.date,
-                                  employer: group.employer,
-                                  description: group.description,
-                                  originalAmount: lineItem.amountOriginal,
-                                  currentFinalAmount: lineItem.amountFinal,
-                                })
-                              }
-                              className={`${styles.actionButtonSm} ${styles.reviewButton}`}
-                              disabled={actionLoading}
-                            >
-                              {lineItem.reviewLabel || "Review"}
-                            </button>
+                        {!readOnly && (
+                          <td className={styles.tableCellTop}>
+                            <div className={styles.pendingActions}>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleReview({
+                                    groupId: group.id,
+                                    expenseId: lineItem.expenseId,
+                                    project: lineItem.project,
+                                    date: group.date,
+                                    employer: group.employer,
+                                    description: group.description,
+                                    originalAmount: lineItem.amountOriginal,
+                                    currentFinalAmount: lineItem.amountFinal,
+                                  })
+                                }
+                                className={`${styles.actionButtonSm} ${styles.reviewButton}`}
+                                disabled={actionLoading}
+                              >
+                                {lineItem.reviewLabel || "Review"}
+                              </button>
 
-                            {isFirstLine && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleGroupDecision(group.id, "approved")}
-                                  className={`${styles.actionButtonSm} ${styles.approveButton}`}
-                                  disabled={actionLoading}
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleGroupDecision(group.id, "rejected")}
-                                  className={`${styles.actionButtonSm} ${styles.declineButton}`}
-                                  disabled={actionLoading}
-                                >
-                                  Decline
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
+                              {isFirstLine && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleGroupDecision(group.id, "approved")}
+                                    className={`${styles.actionButtonSm} ${styles.approveButton}`}
+                                    disabled={actionLoading}
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleGroupDecision(group.id, "rejected")}
+                                    className={`${styles.actionButtonSm} ${styles.declineButton}`}
+                                    disabled={actionLoading}
+                                  >
+                                    Decline
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}

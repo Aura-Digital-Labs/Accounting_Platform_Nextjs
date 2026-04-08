@@ -35,6 +35,17 @@ export async function PATCH(
       },
     });
 
+    const currentUser = await requireAdmin();
+    const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
+    await logAuditAction({
+      userId: currentUser.id,
+      action: AuditAction.ACCOUNT_CLOSED,
+      resourceType: "Account",
+      resourceId: id.toString(),
+      description: `Account ${id} (${account.code}) closed`,
+      status: "success",
+    });
+
     return NextResponse.json(updated);
   } catch (error: unknown) {
     if (error instanceof AuthError) {

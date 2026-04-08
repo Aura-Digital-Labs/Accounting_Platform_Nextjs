@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, AuthError } from "@/lib/auth";
 import { Decimal } from "@prisma/client/runtime/library";
+import {
+  getExpenseByIdRaw,
+  hasExpenseStatusEnum,
+  updateExpenseRaw,
+} from "@/lib/expenseStorage";
 
 /**
  * PATCH /api/expenses/[expenseId]/pm-review — PM updates review values without deciding
@@ -21,10 +26,13 @@ export async function PATCH(
     }
 
     const { expenseId } = await params;
-    const id = Number(expenseId);
+    const id = String(expenseId);
     const body = await req.json();
 
-    const expense = await prisma.expense.findUnique({ where: { id } });
+    const hasEnumExpenseStatus = await hasExpenseStatusEnum();
+    const expense = hasEnumExpenseStatus
+      ? await prisma.expense.findUnique({ where: { id } })
+      : await getExpenseByIdRaw(id);
     if (!expense) {
       return NextResponse.json({ detail: "Expense not found" }, { status: 404 });
     }
@@ -59,13 +67,18 @@ export async function PATCH(
       );
     }
 
-    const updated = await prisma.expense.update({
-      where: { id },
-      data: {
-        finalExpenseAmount: new Decimal(normalizedFinalAmount.toFixed(2)),
-        pmApprovalNotes: body.pm_approval_notes || null,
-      },
-    });
+    const updated = hasEnumExpenseStatus
+      ? await prisma.expense.update({
+          where: { id },
+          data: {
+            finalExpenseAmount: new Decimal(normalizedFinalAmount.toFixed(2)),
+            pmApprovalNotes: body.pm_approval_notes || null,
+          },
+        })
+      : await updateExpenseRaw(id, {
+          finalExpenseAmount: new Decimal(normalizedFinalAmount.toFixed(2)),
+          pmApprovalNotes: body.pm_approval_notes || null,
+        });
 
     return NextResponse.json(updated);
   } catch (error: unknown) {

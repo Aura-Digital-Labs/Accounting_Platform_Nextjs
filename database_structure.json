@@ -1,0 +1,192 @@
+{
+  "users": {
+    "id": "integer",
+    "email": "varchar(255)",
+    "username": "varchar(64)",
+    "full_name": "varchar(255)",
+    "hashed_password": "varchar(255)",
+    "role": "enum(UserRole)",
+    "is_active": "boolean",
+    "petty_cash_account_id": "integer"
+  },
+
+  "Users_new": {
+    "id": "text",
+    "email": "text",
+    "username": "text",
+    "full_name": "varchar(255)",
+    "password": "text",
+    "name": "text",
+    "role": "enum(Role)",
+    "employmentType": "enum",
+    "monthlySalary": "double",
+
+    "bankAccountName": "text",
+    "bankAccountNumber": "text",
+    "bankName": "text",
+    "bankBranch": "text",
+    "bankNotes": "text",
+
+    "level": "integer",
+    "lastSeen": "timestamp",
+    "post": "text",
+
+    "petty_cash_account_id": "integer", 
+    "is_active": "boolean",  
+
+    "createdAt": "timestamp",
+    "updatedAt": "timestamp"
+    },
+
+  "transactions": {
+    "id": "integer",
+    "reference": "varchar(100)",
+    "description": "text",
+    "created_by": "integer",
+    "source_type": "varchar(32)",
+    "source_id": "integer",
+    "posted_at": "timestamp",
+    "document_link": "varchar(500)"
+  },
+
+  "transaction_entries": {
+    "id": "integer",
+    "transaction_id": "integer",
+    "account_id": "integer",
+    "entry_type": "enum(EntryType)",
+    "amount": "numeric(14,2)",
+    "is_checked": "boolean"
+  },
+
+  "projects": {
+    "id": "integer",
+    "code": "varchar(32)",
+    "name": "varchar(255)",
+    "description": "text",
+    "budget": "numeric(14,2)",
+    "account_id": "integer",
+    "client_id": "integer",
+    "client_password": "varchar(255)"
+  },
+  "Projects_new": {
+    "id": "text",
+    "code": "varchar(32)",
+    "name": "text",
+    "description": "text",
+    "budget": "double",
+    "status": "enum(ProjectStatus)",
+    "financialStatus": "enum(FinancialStatus)",
+    "createdById": "text",
+    "projectManagerId": "text",
+
+    "progressDiscussion": "boolean",
+    "progressEstimation": "boolean",
+    "progressEmployeeAllocation": "boolean",
+    "progressDevelopment": "boolean",
+    "progressTesting": "boolean",
+    "progressDeployment": "boolean",
+
+    "createdAt": "timestamp",
+    "updatedAt": "timestamp",
+    "account_id": "integer",
+    "client_id": "integer",
+    "client_password": "varchar(255)"
+    },
+
+  "project_manager_assignments": {
+    "id": "integer",
+    "project_id": "integer",
+    "manager_id": "integer"
+  },
+
+  "project_assignments": {
+    "id": "integer",
+    "project_id": "integer",
+    "employee_id": "integer"
+  },
+  "ProjectAssignment_new": {
+    "id": "text",
+    "projectId": "text",
+    "userId": "text",
+    "createdAt": "timestamp"
+  },
+
+  "expenses": {
+    "id": "integer",
+    "project_id": "integer",
+    "employee_id": "integer",
+    "description": "text",
+    "amount": "numeric(14,2)",
+    "expense_date": "date",
+    "receipt_path": "varchar(500)",
+    "payment_source": "varchar(32)",
+    "status": "enum(ExpenseStatus)",
+    "created_transaction_id": "integer",
+    "approved_by_pm_id": "integer",
+    "final_expense_amount": "numeric(14,2)",
+    "pm_approval_date": "timestamp",
+    "pm_approval_notes": "text"
+  },
+
+  "client_payments": {
+    "id": "integer",
+    "project_id": "integer",
+    "client_id": "integer",
+    "payment_account_id": "integer",
+    "description": "text",
+    "document_link": "varchar(500)",
+    "amount": "numeric(14,2)",
+    "payment_date": "date",
+    "status": "enum(ClientPaymentStatus)",
+    "created_transaction_id": "integer",
+    "approved_by_pm_id": "integer",
+    "pm_approval_date": "timestamp",
+    "pm_approval_notes": "text"
+  },
+
+    "ClientPayment_new": {
+    "id": "text",
+    "projectId": "text",
+    "clientId": "text",
+    "payment_account_id": "integer",
+    "description": "text",
+    "document_link": "varchar(500)",
+    "title": "text",
+    "amount": "double",
+    "status": "enum(ClientPaymentStatus)",
+    "created_transaction_id": "integer",
+    "confirmed": "boolean",
+    "confirmedAt": "timestamp",
+    "confirmedBy": "text",
+    "createdAt": "timestamp",
+    "updatedAt": "timestamp",
+    "pm_approval_notes": "text"
+  },
+
+  "bank_statements": {
+    "id": "integer",
+    "account_id": "integer",
+    "month": "varchar(7)",
+    "statement_link": "varchar(500)",
+    "created_at": "timestamp",
+    "updated_at": "timestamp"
+  },
+
+  "accounts": {
+    "id": "integer",
+    "code": "varchar(20)",
+    "name": "varchar(255)",
+    "type": "enum(AccountType)",
+    "description": "text",
+    "project_id": "integer",
+    "budget": "numeric(14,2)",
+    "include_in_cash_flow": "boolean",
+    "is_payment_accepting": "boolean",
+    "is_petty_cash": "boolean",
+    "is_closed": "boolean",
+    "closed_at": "timestamp",
+    "account_number": "varchar(50)",
+    "account_holder_name": "varchar(255)",
+    "bank_branch": "varchar(255)"
+  }
+}

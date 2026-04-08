@@ -1,3 +1,4 @@
+import { syncProjectFinanceStatus } from "@/lib/projectFinance";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, AuthError } from "@/lib/auth";
@@ -13,7 +14,7 @@ export async function PATCH(
   try {
     const currentUser = await requireAdmin();
     const { paymentId } = await params;
-    const id = Number(paymentId);
+    const id = String(paymentId);
     const body = await req.json();
 
     const payment = await prisma.clientPayment.findUnique({ where: { id } });
@@ -21,9 +22,9 @@ export async function PATCH(
       return NextResponse.json({ detail: "Payment not found" }, { status: 404 });
     }
 
-    if (payment.status !== "approved_by_pm") {
+    if (payment.status !== "approved_by_pm" && payment.status !== "pending") {
       return NextResponse.json(
-        { detail: "Payment must be reviewed by PM before admin decision" },
+        { detail: "Payment is already processed" },
         { status: 400 }
       );
     }
@@ -39,7 +40,7 @@ export async function PATCH(
 
         const txRecord = await createTransaction(
           {
-            description: `Payment for project ${project.name || project.id} - ${payment.description || ""}`,
+            description: `Payment for project ${project.name || project.id} - ${payment.title || payment.description || ""}`,
             sourceType: "client_payment",
             sourceId: payment.id,
             documentLink: payment.documentLink,
@@ -51,36 +52,43 @@ export async function PATCH(
           currentUser.id
         );
 
-        // Map postedAt to paymentDate
-        await tx.transaction.update({
-          where: { id: txRecord.id },
-          data: {
-            postedAt: new Date(
-              payment.paymentDate.getFullYear(),
-              payment.paymentDate.getMonth(),
-              payment.paymentDate.getDate()
-            ),
-          },
-        });
-
         await tx.clientPayment.update({
           where: { id },
           data: {
             status: "approved",
+            confirmed: true,
+            confirmedAt: new Date(),
+            confirmedBy: currentUser.id,
             createdTransactionId: txRecord.id,
           },
         });
       } else {
         await tx.clientPayment.update({
           where: { id },
-          data: { status: "rejected" },
+          data: {
+            status: "rejected",
+            confirmed: true,
+            confirmedAt: new Date(),
+            confirmedBy: currentUser.id,
+          },
         });
       }
 
       return tx.clientPayment.findUnique({ where: { id } });
     });
 
-    return NextResponse.json(updated);
+    const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
+    await logAuditAction({
+      userId: currentUser.id,
+      action: body.status === "approved" ? AuditAction.PAYMENT_APPROVED_FO : AuditAction.PAYMENT_REJECTED_FO,
+      resourceType: "ClientPayment",
+      resourceId: id.toString(),
+      description: `FO/Admin ${body.status} payment ${id}`,
+      status: "success",
+    });
+
+        await syncProjectFinanceStatus(payment.projectId);
+return NextResponse.json(updated);
   } catch (error: unknown) {
     if (error instanceof AuthError) {
       return NextResponse.json({ detail: error.message }, { status: error.status });

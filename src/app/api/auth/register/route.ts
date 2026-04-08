@@ -10,11 +10,12 @@ import { ensureUserAccount } from "@/lib/userAccounts";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { email, username, fullName, password, role } = body;
+    const { email, username, password, role } = body;
+    const name = body.name || body.fullName || body.full_name;
 
-    if (!email || !fullName || !password) {
+    if (!email || !name || !password) {
       return NextResponse.json(
-        { detail: "Email, full name, and password are required" },
+        { detail: "Email, name, and password are required" },
         { status: 400 }
       );
     }
@@ -35,19 +36,30 @@ export async function POST(req: NextRequest) {
       data: {
         email,
         username: username || null,
-        fullName,
-        hashedPassword: await hashPassword(password),
+        name,
+        password: await hashPassword(password),
         role: assignedRole,
       },
     });
 
-    await ensureUserAccount(user.id, user.role, user.fullName);
+    await ensureUserAccount(user.id, user.role, user.name);
+
+    const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
+    await logAuditAction({
+      userId: user.id || "system",
+      action: AuditAction.USER_CREATED,
+      resourceType: "User",
+      resourceId: user.id.toString(),
+      description: `User self-registered: ${user.email} / ${user.name}`,
+      status: "success",
+    });
 
     return NextResponse.json({
       id: user.id,
       email: user.email,
       username: user.username,
-      fullName: user.fullName,
+      name: user.name,
+      fullName: user.name,
       role: user.role,
       isActive: user.isActive,
       pettyCashAccountId: user.pettyCashAccountId,

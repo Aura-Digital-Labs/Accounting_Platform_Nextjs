@@ -13,7 +13,7 @@ export async function POST(
   try {
     const currentUser = await requireAdmin();
     const { expenseId } = await params;
-    const id = Number(expenseId);
+    const id = String(expenseId);
     const { searchParams } = new URL(req.url);
     const bankAccountId = Number(searchParams.get("bank_account_id") || searchParams.get("bankAccountId"));
 

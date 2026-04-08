@@ -4,10 +4,14 @@ import { getServerSession as getNextAuthSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/options";
 import type { UserRole } from "@prisma/client";
 
+function normalizeRole(role: unknown): string {
+  return String(role || "").toLowerCase();
+}
+
 // ─── Password Utilities ─────────────────────────────────────────
 
 export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 12);
+  return bcrypt.hash(password, 10);
 }
 
 export async function verifyPassword(
@@ -31,7 +35,7 @@ export async function requireAuth() {
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: Number(sessionUser.id) },
+    where: { id: sessionUser.id },
   });
 
   if (!user || !user.isActive) {
@@ -43,15 +47,17 @@ export async function requireAuth() {
 
 export async function requireAdmin() {
   const user = await requireAuth();
-  if (user.role !== "admin") {
-    throw new AuthError(403, "Admin access required");
+  const role = normalizeRole(user.role);
+  if (role !== "admin" && role !== "financial_officer") {
+    throw new AuthError(403, "Admin or Financial Officer access required");
   }
   return user;
 }
 
 export async function requireRole(...roles: UserRole[]) {
   const user = await requireAuth();
-  if (!roles.includes(user.role)) {
+  const allowedRoles = roles.map((role) => normalizeRole(role));
+  if (!allowedRoles.includes(normalizeRole(user.role))) {
     throw new AuthError(403, `Required role: ${roles.join(" or ")}`);
   }
   return user;

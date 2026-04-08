@@ -20,6 +20,17 @@ export async function PATCH(req: NextRequest) {
       data: { isChecked: true },
     });
 
+    const currentUserContext = await requireAdmin();
+    const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
+    await logAuditAction({
+      userId: currentUserContext.id,
+      action: AuditAction.TRANSACTION_CHECKED,
+      resourceType: "TransactionEntry",
+      resourceId: entryIds.join(","),
+      description: `${entryIds.length} transaction entries checked`,
+      status: "success",
+    });
+
     return NextResponse.json({ checked: entryIds.length });
   } catch (error: unknown) {
     if (error instanceof AuthError) {

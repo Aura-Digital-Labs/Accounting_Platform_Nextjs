@@ -1,9 +1,16 @@
+import { syncProjectFinanceStatus } from "@/lib/projectFinance";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, AuthError } from "@/lib/auth";
 import { createTransaction, AccountingError } from "@/lib/accounting";
+import {
+  hasExpenseStatusEnum,
+  listExpensesRawByIds,
+  updateExpenseRaw,
+  updateExpenseStatusManyRaw,
+} from "@/lib/expenseStorage";
 
-async function getEmployeeAccount(employeeId: number) {
+async function getEmployeeAccount(employeeId: string) {
   const code = `EMP-${employeeId}`;
   let account = await prisma.account.findUnique({ where: { code } });
 
@@ -44,7 +51,7 @@ async function getComponentProfitAccount() {
   return account;
 }
 
-async function getExpenseCreditAccount(expense: { employeeId: number; paymentSource: string }) {
+async function getExpenseCreditAccount(expense: { employeeId: string; paymentSource: string }) {
   const submitter = await prisma.user.findUnique({ where: { id: expense.employeeId } });
   if (!submitter) {
     throw new AccountingError(404, "Expense submitter not found");
@@ -82,8 +89,8 @@ export async function PATCH(req: NextRequest) {
     const status = body.status as "approved" | "rejected";
     const expenseIds = Array.isArray(body.expense_ids)
       ? body.expense_ids
-          .map((id: unknown) => Number(id))
-          .filter((id: number) => Number.isFinite(id))
+          .map((id: unknown) => String(id).trim())
+          .filter((id: string) => id.length > 0)
       : [];
 
     if (![
@@ -97,10 +104,14 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ detail: "At least one expense id is required" }, { status: 400 });
     }
 
-    const expenses = await prisma.expense.findMany({
-      where: { id: { in: expenseIds } },
-      orderBy: { id: "asc" },
-    });
+    const hasEnumExpenseStatus = await hasExpenseStatusEnum();
+
+    const expenses = hasEnumExpenseStatus
+      ? await prisma.expense.findMany({
+          where: { id: { in: expenseIds } },
+          orderBy: { id: "asc" },
+        })
+      : await listExpensesRawByIds(expenseIds);
 
     if (expenses.length !== expenseIds.length) {
       return NextResponse.json({ detail: "One or more expenses were not found" }, { status: 404 });
@@ -125,10 +136,28 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (status === "rejected") {
-      await prisma.expense.updateMany({
-        where: { id: { in: expenseIds } },
-        data: { status: "rejected" },
-      });
+      if (hasEnumExpenseStatus) {
+        await prisma.expense.updateMany({
+          where: { id: { in: expenseIds } },
+          data: { status: "rejected" },
+        });
+      } else {
+        await updateExpenseStatusManyRaw(expenseIds, "rejected");
+      }
+
+      const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
+      await Promise.all(
+        expenseIds.map((id: number) =>
+          logAuditAction({
+            userId: currentUser.id,
+            action: AuditAction.EXPENSE_REJECTED_FO,
+            resourceType: "Expense",
+            resourceId: id.toString(),
+            description: `FO/Admin rejected expense ${id}`,
+            status: "success",
+          })
+        )
+      );
 
       return NextResponse.json({
         status: "rejected",
@@ -202,10 +231,11 @@ export async function PATCH(req: NextRequest) {
 
       const projectLabel = project.name || `Project ${project.id}`;
       const expenseLabel = (expense.description || "Expense").trim();
+      const expenseDate = new Date(expense.expenseDate);
       const postedAt = new Date(
-        expense.expenseDate.getFullYear(),
-        expense.expenseDate.getMonth(),
-        expense.expenseDate.getDate()
+        expenseDate.getFullYear(),
+        expenseDate.getMonth(),
+        expenseDate.getDate()
       );
 
       const baseTx = await createTransaction(
@@ -229,13 +259,20 @@ export async function PATCH(req: NextRequest) {
 
       baseTransactionIds.push(baseTx.id);
 
-      await prisma.expense.update({
-        where: { id: expense.id },
-        data: {
+      if (hasEnumExpenseStatus) {
+        await prisma.expense.update({
+          where: { id: expense.id },
+          data: {
+            status: "approved",
+            createdTransactionId: baseTx.id,
+          },
+        });
+      } else {
+        await updateExpenseRaw(expense.id, {
           status: "approved",
           createdTransactionId: baseTx.id,
-        },
-      });
+        });
+      }
 
       if (profitAmount > 0) {
         const profitTx = await createTransaction(
@@ -260,6 +297,20 @@ export async function PATCH(req: NextRequest) {
         profitTransactionIds.push(profitTx.id);
       }
     }
+
+    const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
+    await Promise.all(
+      expenses.map((expense) =>
+        logAuditAction({
+          userId: currentUser.id,
+          action: AuditAction.EXPENSE_APPROVED_FO,
+          resourceType: "Expense",
+          resourceId: expense.id.toString(),
+          description: `FO/Admin approved expense ${expense.id}`,
+          status: "success",
+        })
+      )
+    );
 
     return NextResponse.json({
       status: "approved",

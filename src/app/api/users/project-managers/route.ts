@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, AuthError, hashPassword } from "@/lib/auth";
 import { ensureUserAccount } from "@/lib/userAccounts";
@@ -11,9 +12,18 @@ export async function POST(req: NextRequest) {
   try {
     await requireAdmin();
     const body = await req.json();
+    const normalizedEmail = String(body.email || "").trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      return NextResponse.json({ detail: "Email is required" }, { status: 400 });
+    }
+
+    if (typeof body.password !== "string" || body.password.trim().length === 0) {
+      return NextResponse.json({ detail: "Password is required" }, { status: 400 });
+    }
 
     const existingEmail = await prisma.user.findUnique({
-      where: { email: body.email },
+      where: { email: normalizedEmail },
     });
     if (existingEmail) {
       return NextResponse.json({ detail: "Email already exists" }, { status: 409 });
@@ -32,11 +42,15 @@ export async function POST(req: NextRequest) {
     }
 
     const hashedPassword = await hashPassword(body.password);
+    const name = body.name || body.full_name;
+    if (!name || typeof name !== "string" || !name.trim()) {
+      return NextResponse.json({ detail: "Name is required" }, { status: 400 });
+    }
     const user = await prisma.user.create({
       data: {
-        email: body.email,
-        fullName: body.full_name,
-        hashedPassword,
+        email: normalizedEmail,
+        name: name.trim(),
+        password: hashedPassword,
         role: "project_manager",
         pettyCashAccountId: body.petty_cash_account_id
           ? Number(body.petty_cash_account_id)
@@ -44,13 +58,14 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    await ensureUserAccount(user.id, user.role, user.fullName);
+    await ensureUserAccount(user.id, "employee", user.name);
 
     return NextResponse.json(
       {
         id: user.id,
         email: user.email,
-        full_name: user.fullName,
+        name: user.name,
+        full_name: user.name,
         role: user.role,
         is_active: user.isActive,
         petty_cash_account_id: user.pettyCashAccountId,
@@ -71,22 +86,54 @@ export async function GET() {
   try {
     await requireAdmin();
 
-    const pms = await prisma.user.findMany({
-      where: { role: "project_manager" },
-      include: { managedProjects: true },
-      orderBy: { id: "desc" },
-    });
+    const pms = (await prisma.$queryRaw(Prisma.sql`
+      SELECT
+        id,
+        email,
+        username,
+        name,
+        role,
+        COALESCE(is_active, false) AS "isActive",
+        petty_cash_account_id AS "pettyCashAccountId"
+      FROM "User"
+      WHERE lower(role::text) = ${"project_manager"}
+      ORDER BY id DESC
+    `)) as Array<{
+      id: string;
+      email: string;
+      username: string | null;
+      name: string;
+      role: string;
+      isActive: boolean;
+      pettyCashAccountId: number | null;
+    }>;
+
+    const pmIds = pms.map((pm) => pm.id);
+    const managedAssignments = pmIds.length
+      ? ((await prisma.projectManagerAssignment.findMany({
+          where: { managerId: { in: pmIds } },
+          select: { managerId: true, projectId: true },
+        })) as Array<{ managerId: string; projectId: string }>)
+      : [];
+
+    const managedByPmId = new Map<string, string[]>();
+    for (const assignment of managedAssignments) {
+      const list = managedByPmId.get(assignment.managerId) || [];
+      list.push(assignment.projectId);
+      managedByPmId.set(assignment.managerId, list);
+    }
 
     return NextResponse.json(
       pms.map((pm) => ({
         id: pm.id,
         email: pm.email,
         username: pm.username,
-        full_name: pm.fullName,
+        name: pm.name,
+        full_name: pm.name,
         role: pm.role,
         is_active: pm.isActive,
         petty_cash_account_id: pm.pettyCashAccountId,
-        managed_project_ids: pm.managedProjects.map((mp) => mp.projectId),
+        managed_project_ids: managedByPmId.get(pm.id) || [],
       }))
     );
   } catch (error: unknown) {

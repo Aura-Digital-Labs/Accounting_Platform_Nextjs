@@ -8,7 +8,7 @@ import { requireAdmin, requireAuth, AuthError } from "@/lib/auth";
  */
 export async function POST(req: NextRequest) {
   try {
-    await requireAdmin();
+    const currentUser = await requireAdmin();
     const body = await req.json();
 
     const exists = await prisma.account.findUnique({
@@ -33,8 +33,19 @@ export async function POST(req: NextRequest) {
         isPettyCash: body.isPettyCash ?? false,
         accountNumber: body.accountNumber || null,
         accountHolderName: body.accountHolderName || null,
+        bankName: body.bankName || null,
         bankBranch: body.bankBranch || null,
       },
+    });
+
+    const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
+    await logAuditAction({
+      userId: currentUser.id,
+      action: AuditAction.ACCOUNT_CREATED,
+      resourceType: "Account",
+      resourceId: account.id.toString(),
+      description: `Account created: ${account.code} / ${account.name}`,
+      status: "success",
     });
 
     return NextResponse.json(account);

@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 
-type DataTableColumn<T> = {
+export type DataTableColumn<T> = {
   key: keyof T | string;
   header: string;
   className?: string;
@@ -32,7 +32,10 @@ export default function DataTable<T extends { id: number | string }>({
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
             <tr>
               {columns.map((column) => (
-                <th key={String(column.key)} className={`px-3 py-2 font-semibold ${column.className || ""}`}>
+                <th
+                  key={String(column.key)}
+                  className={`px-3 py-2 font-semibold ${column.className || ""}`}
+                >
                   {column.header}
                 </th>
               ))}
@@ -41,15 +44,24 @@ export default function DataTable<T extends { id: number | string }>({
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-3 py-8 text-center text-slate-500">
+                <td
+                  colSpan={columns.length}
+                  className="px-3 py-8 text-center text-slate-500"
+                >
                   {emptyMessage}
                 </td>
               </tr>
             ) : (
               rows.map((row) => (
-                <tr key={String(row.id)} className="border-t border-slate-100 text-slate-700">
+                <tr
+                  key={String(row.id)}
+                  className="border-t border-slate-100 text-slate-700"
+                >
                   {columns.map((column) => (
-                    <td key={String(column.key)} className={`px-3 py-2 align-top ${column.className || ""}`}>
+                    <td
+                      key={String(column.key)}
+                      className={`px-3 py-2 align-top ${column.className || ""}`}
+                    >
                       {column.render
                         ? column.render(row)
                         : String(row[column.key as keyof T] ?? "-")}
@@ -64,5 +76,3 @@ export default function DataTable<T extends { id: number | string }>({
     </section>
   );
 }
-
-export type { DataTableColumn };

@@ -4,15 +4,16 @@ import type { UserRole } from "@prisma/client";
 /**
  * Ensure a corresponding accounting account exists for a user.
  * - Employees/PMs get an EMP-{id} liability (payable) account.
+ * - Financial officers get an EMP-{id} liability (payable) account.
  * - Admins get an ADM-{id} equity account.
  * - Clients get no automatic account.
  *
  * Port of services/user_accounts.py::ensure_user_account
  */
 export async function ensureUserAccount(
-  userId: number,
+  userId: string,
   role: UserRole,
-  fullName: string
+  nameLabel: string
 ) {
   let code: string;
   let name: string;
@@ -21,17 +22,22 @@ export async function ensureUserAccount(
   switch (role) {
     case "employee":
       code = `EMP-${userId}`;
-      name = `Employee Payable ${fullName}`;
+      name = `Employee Payable ${nameLabel}`;
       accountType = "liability";
       break;
     case "project_manager":
       code = `EMP-${userId}`;
-      name = `Project Manager Payable ${fullName}`;
+      name = `Project Manager Payable ${nameLabel}`;
+      accountType = "liability";
+      break;
+    case "financial_officer":
+      code = `EMP-${userId}`;
+      name = `Financial Officer Payable ${nameLabel}`;
       accountType = "liability";
       break;
     case "admin":
       code = `ADM-${userId}`;
-      name = `Admin Equity ${fullName}`;
+      name = `Admin Equity ${nameLabel}`;
       accountType = "equity";
       break;
     default:

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { FormEvent, useCallback, useMemo, useState } from "react";
@@ -15,6 +15,13 @@ type AccountRow = {
   description: string | null;
   projectId: number | null;
   isClosed: boolean;
+  isPaymentAccepting: boolean;
+  isPettyCash: boolean;
+  includeCashFlow: boolean;
+  accountNumber: string | null;
+  accountHolderName: string | null;
+  bankName: string | null;
+  bankBranch: string | null;
 };
 
 type LedgerRow = {
@@ -26,6 +33,7 @@ type LedgerRow = {
   entry_type: "debit" | "credit";
   amount: number;
   is_checked: boolean;
+  is_transaction_checked: boolean;
   document_link: string | null;
 };
 
@@ -51,7 +59,7 @@ type AccountOption = {
 function fmt(amount: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency: "LKR",
     maximumFractionDigits: 2,
   }).format(Number(amount || 0));
 }
@@ -65,7 +73,7 @@ async function parseError(res: Response) {
   }
 }
 
-export default function AccountTransactionsClient({ accountId }: { accountId: number }) {
+export default function AccountTransactionsClient({ accountId, isReadOnly = false }: { accountId: number, isReadOnly?: boolean }) {
   const [account, setAccount] = useState<AccountRow | null>(null);
   const [ledger, setLedger] = useState<LedgerRow[]>([]);
   const [accountOptions, setAccountOptions] = useState<AccountOption[]>([]);
@@ -83,13 +91,27 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
     name: "",
     type: "asset" as AccountType,
     description: "",
+    isPaymentAccepting: false,
+    isPettyCash: false,
+    includeCashFlow: false,
+    accountNumber: "",
+    accountHolderName: "",
+    bankName: "",
+    bankBranch: "",
   });
 
   const [editingTransactionId, setEditingTransactionId] = useState<number | null>(null);
   const [txForm, setTxForm] = useState<{
     description: string;
-    entries: { accountId: string; entryType: "debit" | "credit"; amount: string }[];
-  }>({ description: "", entries: [] });
+    amount: string;
+    entries: { accountId: string; entryType: "debit" | "credit"; amount?: string }[];
+  }>({ description: "", amount: "", entries: [] });
+
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    action: "close" | "check" | null;
+    inputText: string;
+  }>({ isOpen: false, action: null, inputText: "" });
 
   const clearStatus = () => {
     setMessage("");
@@ -123,6 +145,13 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
         name: accountPayload.name,
         type: accountPayload.type,
         description: accountPayload.description || "",
+        isPaymentAccepting: accountPayload.isPaymentAccepting,
+        isPettyCash: accountPayload.isPettyCash,
+        includeCashFlow: accountPayload.includeCashFlow,
+        accountNumber: accountPayload.accountNumber || "",
+        accountHolderName: accountPayload.accountHolderName || "",
+        bankName: accountPayload.bankName || "",
+        bankBranch: accountPayload.bankBranch || "",
       });
       setSelectedEntryIds([]);
     } catch (loadError) {
@@ -142,7 +171,7 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
   );
 
   const checkedTransactionIds = useMemo(
-    () => new Set(ledger.filter((row) => row.is_checked).map((row) => row.transaction_id)),
+    () => new Set(ledger.filter((row) => row.is_transaction_checked).map((row) => row.transaction_id)),
     [ledger]
   );
 
@@ -189,6 +218,15 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
     );
   };
 
+  const promptCheckSelected = () => {
+    clearStatus();
+    if (selectedEntryIds.length === 0) {
+      setError("Select at least one transaction to check.");
+      return;
+    }
+    setConfirmModal({ isOpen: true, action: "check", inputText: "" });
+  };
+
   const checkSelected = async () => {
     clearStatus();
 
@@ -232,6 +270,13 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
           name: accountForm.name,
           type: accountForm.type,
           description: accountForm.description || null,
+          isPaymentAccepting: accountForm.isPaymentAccepting,
+          isPettyCash: accountForm.isPettyCash,
+          includeCashFlow: accountForm.includeCashFlow,
+          accountNumber: accountForm.accountNumber || null,
+          accountHolderName: accountForm.accountHolderName || null,
+          bankName: accountForm.bankName || null,
+          bankBranch: accountForm.bankBranch || null,
         }),
       });
 
@@ -245,6 +290,12 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to update account");
     }
+  };
+
+  const promptCloseAccount = () => {
+    clearStatus();
+    if (!account) return;
+    setConfirmModal({ isOpen: true, action: "close", inputText: "" });
   };
 
   const closeAccount = async () => {
@@ -286,12 +337,14 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
       }
 
       const payload = (await res.json()) as TransactionDetail;
+      const initialAmount = payload.entries[0] ? String(Number(payload.entries[0].amount)) : "";
+      
       setTxForm({
         description: payload.description,
+        amount: initialAmount,
         entries: payload.entries.map((entry) => ({
           accountId: String(entry.accountId),
           entryType: entry.entryType,
-          amount: String(Number(entry.amount)),
         })),
       });
       setEditingTransactionId(payload.id);
@@ -309,7 +362,7 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
       const entries = txForm.entries.map((entry) => ({
         accountId: Number(entry.accountId),
         entryType: entry.entryType,
-        amount: Number(entry.amount),
+        amount: Number(txForm.amount),
       }));
 
       const res = await fetch(`/api/transactions/${editingTransactionId}`, {
@@ -359,6 +412,10 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
     );
   }
 
+  const canGenerateInvoice =
+    account.projectId !== null ||
+    (typeof account.code === "string" && account.code.startsWith("PRJ-"));
+
   return (
     <section className={styles.page}>
       <article className={styles.card}>
@@ -367,25 +424,29 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
           {account.code} - {account.name}
         </p>
         <div className={styles.topActions}>
-          {account.projectId !== null && (
+          {canGenerateInvoice && (
             <Link href={`/account/${accountId}/invoice`} className={styles.primaryButton}>
               Generate Invoice
             </Link>
           )}
-          <button className={styles.primaryButton} type="button" onClick={() => setEditingAccount((v) => !v)}>
-            Edit Account
-          </button>
-          <button
-            className={styles.primaryButton}
-            type="button"
-            onClick={closeAccount}
-            disabled={account.isClosed}
-          >
-            {account.isClosed ? "Account Closed" : "Close Account"}
-          </button>
-          <button className={styles.primaryButton} type="button" onClick={checkSelected}>
-            Check Selected
-          </button>
+          {!isReadOnly && (
+            <>
+              <button className={styles.primaryButton} type="button" onClick={() => setEditingAccount((v) => !v)}>
+                Edit Account
+              </button>
+              <button
+                className={styles.primaryButton}
+                type="button"
+                onClick={promptCloseAccount}
+                disabled={account.isClosed}
+              >
+                {account.isClosed ? "Account Closed" : "Close Account"}
+              </button>
+              <button className={styles.primaryButton} type="button" onClick={promptCheckSelected}>
+                Check Selected
+              </button>
+            </>
+          )}
         </div>
         <p style={{ marginTop: "0.75rem" }}>
           <Link href="/" className={styles.backLink}>
@@ -451,6 +512,66 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
                     placeholder="Description"
                   />
                 </div>
+                <div className={styles.checkboxRow}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={accountForm.includeCashFlow}
+                      onChange={(e) =>
+                        setAccountForm((prev) => ({ ...prev, includeCashFlow: e.target.checked }))
+                      }
+                    />
+                    Include in cash flow
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={accountForm.isPaymentAccepting}
+                      onChange={(e) =>
+                        setAccountForm((prev) => ({ ...prev, isPaymentAccepting: e.target.checked }))
+                      }
+                    />
+                    Payment accepting
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={accountForm.isPettyCash}
+                      onChange={(e) =>
+                        setAccountForm((prev) => ({ ...prev, isPettyCash: e.target.checked }))
+                      }
+                    />
+                    Petty cash
+                  </label>
+                </div>
+                {accountForm.isPaymentAccepting && (
+                  <div className={styles.formRowGroup}>
+                    <input
+                      className={styles.input}
+                      placeholder="Account Holder Name"
+                      value={accountForm.accountHolderName || ""}
+                      onChange={(e) => setAccountForm((prev) => ({ ...prev, accountHolderName: e.target.value }))}
+                    />
+                    <input
+                      className={styles.input}
+                      placeholder="Bank Name"
+                      value={accountForm.bankName || ""}
+                      onChange={(e) => setAccountForm((prev) => ({ ...prev, bankName: e.target.value }))}
+                    />
+                    <input
+                      className={styles.input}
+                      placeholder="Account Number"
+                      value={accountForm.accountNumber || ""}
+                      onChange={(e) => setAccountForm((prev) => ({ ...prev, accountNumber: e.target.value }))}
+                    />
+                    <input
+                      className={styles.input}
+                      placeholder="Branch"
+                      value={accountForm.bankBranch || ""}
+                      onChange={(e) => setAccountForm((prev) => ({ ...prev, bankBranch: e.target.value }))}
+                    />
+                  </div>
+                )}
                 <div className={styles.actionsRow}>
                   <button
                     className={styles.secondaryButton}
@@ -504,7 +625,7 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
                             : "Show checked transactions"
                         }
                       >
-                        {showCheckedTransactions ? "▼" : "▶"}
+                        {showCheckedTransactions ? "\u25BC" : "\u25B6"}
                       </button>
                     </td>
                     <td colSpan={3}>Balance carried down from checked transactions</td>
@@ -535,7 +656,7 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
                         )}
                       </td>
                       <td>
-                        <button className={styles.secondaryButton} type="button" disabled>
+                        <button className={styles.secondaryButton} type="button" disabled title="This transaction is verified in a bank statement and cannot be edited.">
                           Edit
                         </button>
                       </td>
@@ -570,6 +691,11 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
                         type="button"
                         onClick={() => startTransactionEdit(row.transaction_id)}
                         disabled={checkedTransactionIds.has(row.transaction_id)}
+                        title={
+                          checkedTransactionIds.has(row.transaction_id)
+                            ? "This transaction is verified in a bank statement and cannot be edited."
+                            : ""
+                        }
                       >
                         Edit
                       </button>
@@ -591,89 +717,162 @@ export default function AccountTransactionsClient({ accountId }: { accountId: nu
         )}
       </article>
 
-      {editingTransactionId !== null && (
-        <article className={styles.card}>
-          <h2 className={styles.title}>Edit Transaction #{editingTransactionId}</h2>
-          <form className={styles.editTransactionForm} onSubmit={saveTransactionEdit}>
-            <label className={styles.label}>
-              Description
-              <input
-                className={styles.input}
-                value={txForm.description}
-                onChange={(e) => setTxForm((prev) => ({ ...prev, description: e.target.value }))}
-                required
-              />
-            </label>
-
-            {txForm.entries.map((entry, idx) => (
-              <div className={styles.editGrid} key={`${editingTransactionId}-${idx}`}>
-                <select
-                  className={styles.input}
-                  value={entry.accountId}
-                  onChange={(e) =>
-                    setTxForm((prev) => ({
-                      ...prev,
-                      entries: prev.entries.map((row, i) =>
-                        i === idx ? { ...row, accountId: e.target.value } : row
-                      ),
-                    }))
-                  }
-                >
-                  {accountOptions
-                    .filter((option) => !option.isClosed)
-                    .map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.code} - {option.name}
-                      </option>
-                    ))}
-                </select>
-
-                <select
-                  className={styles.input}
-                  value={entry.entryType}
-                  onChange={(e) =>
-                    setTxForm((prev) => ({
-                      ...prev,
-                      entries: prev.entries.map((row, i) =>
-                        i === idx
-                          ? { ...row, entryType: e.target.value as "debit" | "credit" }
-                          : row
-                      ),
-                    }))
-                  }
-                >
-                  <option value="debit">Debit</option>
-                  <option value="credit">Credit</option>
-                </select>
-
-                <input
-                  className={styles.input}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={entry.amount}
-                  onChange={(e) =>
-                    setTxForm((prev) => ({
-                      ...prev,
-                      entries: prev.entries.map((row, i) =>
-                        i === idx ? { ...row, amount: e.target.value } : row
-                      ),
-                    }))
-                  }
-                  required
-                />
-              </div>
-            ))}
-
-            <div className={styles.actionsRow}>
-              <button className={styles.secondaryButton} type="button" onClick={() => setEditingTransactionId(null)}>
-                Cancel
+      {!isReadOnly && editingTransactionId !== null && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modalPanel} style={{ maxWidth: "600px" }}>
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>Edit Transaction #{editingTransactionId}</h3>
+              <button
+                className={styles.secondaryButton}
+                type="button"
+                onClick={() => setEditingTransactionId(null)}
+              >
+                Close
               </button>
-              <button className={styles.primaryButton} type="submit">Save Transaction</button>
             </div>
-          </form>
-        </article>
+            <form className={styles.modalBody} onSubmit={saveTransactionEdit}>
+              <div className={styles.formRowGroup}>
+                <label className={styles.label}>
+                  Description
+                  <input
+                    className={styles.input}
+                    value={txForm.description}
+                    onChange={(e) => setTxForm((prev) => ({ ...prev, description: e.target.value }))}
+                    required
+                  />
+                </label>
+                <label className={styles.label}>
+                  Amount
+                  <input
+                    className={styles.input}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={txForm.amount}
+                    onChange={(e) => setTxForm((prev) => ({ ...prev, amount: e.target.value }))}
+                    required
+                  />
+                </label>
+              </div>
+
+              <div style={{ marginTop: "1rem", marginBottom: "1rem" }}>
+                <h4 style={{ fontSize: "0.9rem", color: "#475569", marginBottom: "0.5rem" }}>Affected Accounts</h4>
+                {txForm.entries.map((entry, idx) => (
+                  <div className={styles.editGrid} key={`${editingTransactionId}-${idx}`} style={{ gridTemplateColumns: "2fr 1fr", marginBottom: "0.5rem" }}>
+                    <select
+                      className={styles.input}
+                      value={entry.accountId}
+                      onChange={(e) =>
+                        setTxForm((prev) => ({
+                          ...prev,
+                          entries: prev.entries.map((row, i) =>
+                            i === idx ? { ...row, accountId: e.target.value } : row
+                          ),
+                        }))
+                      }
+                    >
+                      {accountOptions
+                        .filter((option) => !option.isClosed)
+                        .map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.code} - {option.name}
+                          </option>
+                        ))}
+                    </select>
+
+                    <select
+                      className={styles.input}
+                      value={entry.entryType}
+                      onChange={(e) =>
+                        setTxForm((prev) => ({
+                          ...prev,
+                          entries: prev.entries.map((row, i) =>
+                            i === idx
+                              ? { ...row, entryType: e.target.value as "debit" | "credit" }
+                              : row
+                          ),
+                        }))
+                      }
+                    >
+                      <option value="debit">Debit</option>
+                      <option value="credit">Credit</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
+
+              <div className={styles.actionsRow}>
+                <button className={styles.secondaryButton} type="button" onClick={() => setEditingTransactionId(null)}>
+                  Cancel
+                </button>
+                <button className={styles.primaryButton} type="submit">Save Transaction</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {confirmModal.isOpen && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modalPanel} style={{ maxWidth: "450px" }}>
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>Confirm Action</h3>
+              <button
+                type="button"
+                className={styles.modalClose}
+                onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+              >
+                &times;
+              </button>
+            </div>
+            <div className={styles.modalBody}>
+              <p style={{ marginBottom: "1rem" }}>
+                {confirmModal.action === "close" 
+                  ? "Are you sure you want to close this account? This action cannot be undone."
+                  : "Are you sure you want to check these selected transactions?"}
+              </p>
+              <p style={{ marginBottom: "1rem", fontSize: "0.9rem", color: "#64748b" }}>
+                Please type <strong>confirm</strong> in the box below and click Confirm to proceed.
+              </p>
+              <input
+                type="text"
+                className={styles.input}
+                value={confirmModal.inputText}
+                onChange={(e) => setConfirmModal({ ...confirmModal, inputText: e.target.value })}
+                placeholder="Type 'confirm' here"
+                autoFocus
+              />
+              <div className={styles.modalActions} style={{ marginTop: "1.5rem" }}>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className={styles.primaryButton}
+                  disabled={confirmModal.inputText.trim().toLowerCase() !== "confirm"}
+                  onClick={() => {
+                    if (confirmModal.inputText.trim().toLowerCase() === "confirm") {
+                      setConfirmModal({ ...confirmModal, isOpen: false });
+                      if (confirmModal.action === "close") {
+                        closeAccount();
+                      } else {
+                        checkSelected();
+                      }
+                    }
+                  }}
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );
 }
+

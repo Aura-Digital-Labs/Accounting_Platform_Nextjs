@@ -70,7 +70,7 @@ export async function PATCH(
     const allowedFields = [
       "code", "name", "type", "description", "budget",
       "includeCashFlow", "isPaymentAccepting", "isPettyCash",
-      "accountNumber", "accountHolderName", "bankBranch",
+      "accountNumber", "accountHolderName", "bankName", "bankBranch",
     ];
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -100,8 +100,31 @@ export async function PATCH(
         where: { id },
         data: { type: newType },
       });
+      
+      const currentUser = await requireAdmin();
+      const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
+      await logAuditAction({
+        userId: currentUser.id,
+        action: AuditAction.ACCOUNT_UPDATED,
+        resourceType: "Account",
+        resourceId: id.toString(),
+        description: `Account ${id} (${account.code}) updated`,
+        status: "success",
+      });
+
       return NextResponse.json(finalAccount);
     }
+
+    const currentUser = await requireAdmin();
+    const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
+    await logAuditAction({
+      userId: currentUser.id,
+      action: AuditAction.ACCOUNT_UPDATED,
+      resourceType: "Account",
+      resourceId: id.toString(),
+      description: `Account ${id} (${account.code}) updated`,
+      status: "success",
+    });
 
     return NextResponse.json(updated);
   } catch (error: unknown) {

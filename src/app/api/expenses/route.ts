@@ -1,9 +1,18 @@
+import { syncProjectFinanceStatus } from "@/lib/projectFinance";
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, AuthError } from "@/lib/auth";
-import { createTransaction, AccountingError } from "@/lib/accounting";
 import { uploadBytesToGoogleDrive } from "@/lib/googleDrive";
 import { Decimal } from "@prisma/client/runtime/library";
+import {
+  createExpenseRaw,
+  hasExpenseStatusEnum,
+  listExpensesRaw,
+  listExpensesRawByEmployee,
+} from "@/lib/expenseStorage";
+
+const SUBMISSION_GROUP_PREFIX = "__submission_group__:";
 
 /**
  * POST /api/expenses — Submit expense (employee or PM)
@@ -21,13 +30,20 @@ export async function POST(req: NextRequest) {
     }
 
     const formData = await req.formData();
-    const projectId = Number(formData.get("project_id"));
+    const projectId = String(formData.get("project_id") || "").trim();
     const description = formData.get("description") as string;
     const amountStr = formData.get("amount") as string;
     const expenseDateStr = formData.get("expense_date") as string;
     const paymentSource = ((formData.get("payment_source") as string) || "personal")
       .trim()
       .toLowerCase();
+    const submissionGroupIdRaw = String(formData.get("submission_group_id") || "").trim();
+    const submissionGroupId = /^[a-zA-Z0-9_-]{6,128}$/.test(submissionGroupIdRaw)
+      ? submissionGroupIdRaw
+      : "";
+    const submissionGroupMarker = submissionGroupId
+      ? `${SUBMISSION_GROUP_PREFIX}${submissionGroupId}`
+      : null;
     const receiptFile = formData.get("receipt_file") as File | null;
 
     // Validate expense date
@@ -37,6 +53,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate project
+    if (!projectId) {
+      return NextResponse.json({ detail: "Project is required" }, { status: 400 });
+    }
+
     const project = await prisma.project.findUnique({ where: { id: projectId } });
     if (!project) {
       return NextResponse.json({ detail: "Project not found" }, { status: 404 });
@@ -45,7 +65,7 @@ export async function POST(req: NextRequest) {
     // Employee must be assigned
     if (currentUser.role === "employee") {
       const assignment = await prisma.projectAssignment.findFirst({
-        where: { projectId, employeeId: currentUser.id },
+        where: { projectId, userId: currentUser.id },
       });
       if (!assignment) {
         return NextResponse.json(
@@ -122,19 +142,64 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const expense = await prisma.expense.create({
-      data: {
-        employeeId: currentUser.id,
+    const hasEnumExpenseStatus = await hasExpenseStatusEnum();
+
+    let expense;
+    if (hasEnumExpenseStatus) {
+      expense = await prisma.expense.create({
+        data: {
+          employeeId: currentUser.id,
+          projectId,
+          description,
+          amount: new Decimal(normalizedAmount.toFixed(2)),
+          expenseDate: parsedDate,
+          receiptPath,
+          paymentSource,
+          pmApprovalNotes: submissionGroupMarker,
+        },
+      });
+    } else {
+      const id = randomUUID().replace(/-/g, "");
+      const amount = new Decimal(normalizedAmount.toFixed(2));
+
+      expense =
+        (await createExpenseRaw({
+          id,
+          projectId,
+          employeeId: currentUser.id,
+          description,
+          amount,
+          expenseDate: parsedDate,
+          receiptPath,
+          paymentSource,
+          status: "pending",
+          pmApprovalNotes: submissionGroupMarker,
+        })) || {
+        id,
         projectId,
+        employeeId: currentUser.id,
         description,
-        amount: new Decimal(normalizedAmount.toFixed(2)),
+        amount: Number(amount),
         expenseDate: parsedDate,
         receiptPath,
         paymentSource,
-      },
+        status: "pending",
+      };
+    }
+
+    // Audit log
+    const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
+    await logAuditAction({
+      userId: currentUser.id,
+      action: AuditAction.EXPENSE_SUBMITTED,
+      resourceType: "Expense",
+      resourceId: String(expense.id),
+      description: `Expense submitted for project ${projectId} amount ${normalizedAmount.toFixed(2)}`,
+      status: "success",
     });
 
-    return NextResponse.json(expense, { status: 201 });
+        await syncProjectFinanceStatus(expense.projectId);
+return NextResponse.json(expense, { status: 201 });
   } catch (error: unknown) {
     if (error instanceof AuthError) {
       return NextResponse.json({ detail: error.message }, { status: error.status });
@@ -147,18 +212,21 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   try {
     const currentUser = await requireAuth();
+    const isAdminLike =
+      currentUser.role === "admin" || currentUser.role === "financial_officer";
 
-    let expenses;
-    if (currentUser.role === "admin") {
-      expenses = await prisma.expense.findMany({
-        orderBy: { id: "desc" },
-      });
-    } else {
-      expenses = await prisma.expense.findMany({
-        where: { employeeId: currentUser.id },
-        orderBy: { id: "desc" },
-      });
-    }
+    const hasEnumExpenseStatus = await hasExpenseStatusEnum();
+
+    const expenses = hasEnumExpenseStatus
+      ? isAdminLike
+        ? await prisma.expense.findMany({ orderBy: { id: "desc" } })
+        : await prisma.expense.findMany({
+            where: { employeeId: currentUser.id },
+            orderBy: { id: "desc" },
+          })
+      : isAdminLike
+        ? await listExpensesRaw()
+        : await listExpensesRawByEmployee(currentUser.id);
 
     return NextResponse.json(expenses);
   } catch (error: unknown) {

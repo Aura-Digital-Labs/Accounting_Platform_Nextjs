@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, AuthError } from "@/lib/auth";
+import {
+  hasExpenseStatusEnum,
+  listPendingExpensesForProjectsRaw,
+} from "@/lib/expenseStorage";
 
 /**
  * GET /api/expenses/pm/pending — PM's pending expenses for assigned projects
@@ -26,25 +30,62 @@ export async function GET() {
       return NextResponse.json([]);
     }
 
-    const expenses = await prisma.expense.findMany({
-      where: {
-        projectId: { in: projectIds },
-        status: "pending",
-      },
-      orderBy: { id: "desc" },
-      include: {
-        employee: { select: { fullName: true } },
-        project: { select: { name: true } },
-      },
-    });
+    const hasEnumExpenseStatus = await hasExpenseStatusEnum();
+
+    const expenses = hasEnumExpenseStatus
+      ? await prisma.expense.findMany({
+          where: {
+            projectId: { in: projectIds },
+            status: "pending",
+          },
+          orderBy: { id: "desc" },
+          include: {
+            employee: { select: { name: true } },
+            project: { select: { name: true } },
+          },
+        })
+      : await listPendingExpensesForProjectsRaw(projectIds);
+
+    const rawProjectNameById = new Map<string, string>();
+    const rawEmployeeNameById = new Map<string, string>();
+
+    if (!hasEnumExpenseStatus) {
+      const expenseRows = expenses as Array<{ projectId: string; employeeId: string }>;
+      const uniqueProjectIds = [...new Set(expenseRows.map((e) => e.projectId))];
+      const uniqueEmployeeIds = [...new Set(expenseRows.map((e) => e.employeeId))];
+
+      const [projects, employees] = await Promise.all([
+        prisma.project.findMany({
+          where: { id: { in: uniqueProjectIds } },
+          select: { id: true, name: true },
+        }),
+        prisma.user.findMany({
+          where: { id: { in: uniqueEmployeeIds } },
+          select: { id: true, name: true },
+        }),
+      ]);
+
+      for (const p of projects) {
+        rawProjectNameById.set(p.id, p.name);
+      }
+      for (const u of employees) {
+        rawEmployeeNameById.set(u.id, u.name);
+      }
+    }
 
     return NextResponse.json(
       expenses.map((e) => ({
         id: e.id,
         project_id: e.projectId,
         employee_id: e.employeeId,
-        project_name: e.project.name,
-        employee_name: e.employee.fullName,
+        project_name:
+          "project" in e && e.project
+            ? e.project.name
+            : rawProjectNameById.get(e.projectId) || e.projectId,
+        employee_name:
+          "employee" in e && e.employee
+            ? e.employee.name
+            : rawEmployeeNameById.get(e.employeeId) || e.employeeId,
         description: e.description,
         amount: Number(e.amount),
         expense_date: e.expenseDate,

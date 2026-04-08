@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import styles from "./ClientPaymentsDashboard.module.css";
 
 type Project = {
-  id: number;
+  id: string;
   code: string;
   name: string;
 };
@@ -16,10 +16,15 @@ type PaymentAccount = {
   id: number;
   code: string;
   name: string;
+  bankName?: string | null;
+  accountHolderName?: string | null;
+  accountNumber?: string | null;
+  bankBranch?: string | null;
 };
 
 type ClientPayment = {
-  id: number;
+  id: string;
+  title?: string;
   payment_account_id: number;
   amount: number;
   payment_date: string;
@@ -29,10 +34,10 @@ type ClientPayment = {
 };
 
 const paymentFormSchema = z.object({
-  projectId: z.coerce.number().int().positive("Project is required"),
+  projectId: z.string().min(1, "Project is required"),
   paymentAccountId: z.coerce.number().int().positive("Payment account is required"),
+  title: z.string().min(1, "Title is required").max(200, "Title must be 200 characters or less"),
   amount: z.coerce.number().positive("Amount must be greater than zero"),
-  paymentDate: z.string().min(1, "Payment date is required"),
   description: z.string().max(500, "Description must be 500 characters or less").optional(),
 });
 
@@ -51,7 +56,7 @@ async function parseApiError(res: Response) {
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency: "LKR",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount);
@@ -66,17 +71,24 @@ function formatDate(value: string) {
 }
 
 function statusClassName(status: string) {
-  if (status === "approved" || status === "approved_by_pm") {
+  const s = String(status).toLowerCase();
+  if (s === "approved") {
     return styles.statusApproved;
   }
-  if (status === "rejected" || status === "rejected_by_pm") {
+  if (s === "approved_by_pm") {
+    return styles.statusPending;
+  }
+  if (s === "rejected" || s === "rejected_by_pm") {
     return styles.statusRejected;
   }
   return styles.statusPending;
 }
 
 function statusLabel(status: string) {
-  return status
+  if (String(status).toLowerCase() === "approved_by_pm") {
+    return "Approved By PM";
+  }
+  return String(status).toLowerCase()
     .split("_")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
@@ -99,22 +111,42 @@ export default function ClientPaymentsDashboard() {
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<PaymentFormInput, unknown, PaymentFormOutput>({
     resolver: zodResolver(paymentFormSchema),
     defaultValues: {
       projectId: "",
       paymentAccountId: "",
+      title: "",
       amount: "",
-      paymentDate: "",
       description: "",
     },
   });
 
   const accountNameMap = useMemo(
     () =>
-      accounts.reduce<Record<number, string>>((acc, account) => {
-        acc[account.id] = `${account.code} - ${account.name}`;
+      accounts.reduce<Record<number, React.ReactNode>>((acc, account) => {
+        const hasBankDetails =
+          account.bankName ||
+          account.accountHolderName ||
+          account.accountNumber ||
+          account.bankBranch;
+          
+        if (hasBankDetails) {
+          acc[account.id] = (
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "0.85rem" }}>
+              {account.bankName && <span>Bank: {account.bankName}</span>}
+              {account.accountHolderName && <span>Name: {account.accountHolderName}</span>}
+              {account.accountNumber && <span>Acc: {account.accountNumber}</span>}
+              {account.bankBranch && <span>Branch: {account.bankBranch}</span>}
+            </div>
+          );
+        } else {
+          acc[account.id] = "No bank details provided";
+        }
+        
         return acc;
       }, {}),
     [accounts]
@@ -125,10 +157,28 @@ export default function ClientPaymentsDashboard() {
     label: `${project.code} - ${project.name}`,
   }));
 
-  const accountOptions = accounts.map((account) => ({
-    value: String(account.id),
-    label: `${account.code} - ${account.name}`,
-  }));
+  const accountOptions = accounts.map((account) => {
+    return {
+      value: String(account.id),
+      account: account
+    };
+  });
+
+  const selectedPaymentAccountId = watch("paymentAccountId");
+  const selectedPaymentAccount = accounts.find((a) => String(a.id) === selectedPaymentAccountId);
+  
+  const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setAccountDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const loadDashboardData = async () => {
     setLoadingData(true);
@@ -186,8 +236,8 @@ export default function ClientPaymentsDashboard() {
       const formData = new FormData();
       formData.append("project_id", String(values.projectId));
       formData.append("payment_account_id", String(values.paymentAccountId));
+      formData.append("title", values.title.trim());
       formData.append("amount", Number(values.amount).toFixed(2));
-      formData.append("payment_date", values.paymentDate);
       if (values.description?.trim()) {
         formData.append("description", values.description.trim());
       }
@@ -207,8 +257,8 @@ export default function ClientPaymentsDashboard() {
       reset({
         projectId: "",
         paymentAccountId: "",
+        title: "",
         amount: "",
-        paymentDate: "",
         description: "",
       });
       setPaymentSlip(null);
@@ -263,22 +313,113 @@ export default function ClientPaymentsDashboard() {
             <label className={styles.label} htmlFor="paymentAccountId">
               Payment Account
             </label>
-            <select
-              id="paymentAccountId"
-              className={styles.input}
-              disabled={loadingData || submitting}
-              {...register("paymentAccountId")}
-            >
-              <option value="">{loadingData ? "Loading accounts..." : "Select payment account"}</option>
-              {accountOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <div ref={dropdownRef} style={{ position: "relative" }}>
+              <div 
+                className={styles.input} 
+                style={{ 
+                  cursor: loadingData || submitting ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  minHeight: "42px",
+                  lineHeight: "1.2"
+                }}
+                onClick={() => {
+                  if (!loadingData && !submitting) {
+                    setAccountDropdownOpen(!accountDropdownOpen);
+                  }
+                }}
+              >
+                {!selectedPaymentAccount ? (
+                  <span style={{ color: "#64748b" }}>{loadingData ? "Loading accounts..." : "Select payment account"}</span>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px", padding: "4px 0", fontSize: "0.85rem" }}>
+                    {selectedPaymentAccount.bankName && <div><strong>Bank:</strong> {selectedPaymentAccount.bankName}</div>}
+                    {selectedPaymentAccount.accountHolderName && <div><strong>Name:</strong> {selectedPaymentAccount.accountHolderName}</div>}
+                    {selectedPaymentAccount.accountNumber && <div><strong>Acc:</strong> {selectedPaymentAccount.accountNumber}</div>}
+                    {selectedPaymentAccount.bankBranch && <div><strong>Branch:</strong> {selectedPaymentAccount.bankBranch}</div>}
+                    {!selectedPaymentAccount.bankName && !selectedPaymentAccount.accountHolderName && !selectedPaymentAccount.accountNumber && !selectedPaymentAccount.bankBranch && (
+                      <div>No bank details provided</div>
+                    )}
+                  </div>
+                )}
+                <span style={{ marginLeft: "8px", fontSize: "0.8rem", color: "#64748b" }}>{"\u25BC"}</span>
+              </div>
+              
+              {accountDropdownOpen && (
+                <div style={{ 
+                  position: "absolute", 
+                  top: "100%", 
+                  left: 0, 
+                  right: 0, 
+                  marginTop: "4px",
+                  maxHeight: "300px", 
+                  overflowY: "auto", 
+                  backgroundColor: "white", 
+                  border: "1px solid #d4dce9", 
+                  borderRadius: "8px", 
+                  boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
+                  zIndex: 50 
+                }}>
+                  {accountOptions.map((option) => (
+                    <div 
+                      key={option.value}
+                      style={{ 
+                        padding: "10px 12px", 
+                        borderBottom: "1px solid #f1f5f9",
+                        cursor: "pointer",
+                        backgroundColor: selectedPaymentAccountId === option.value ? "#f8fafc" : "transparent"
+                      }}
+                      onClick={() => {
+                        setValue("paymentAccountId", option.value, { shouldValidate: true });
+                        setAccountDropdownOpen(false);
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f1f5f9")}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = selectedPaymentAccountId === option.value ? "#f8fafc" : "transparent")}
+                    >
+                      <div style={{ display: "flex", flexDirection: "column", gap: "2px", fontSize: "0.85rem" }}>
+                        {option.account.bankName && <div><strong>Bank:</strong> {option.account.bankName}</div>}
+                        {option.account.accountHolderName && <div><strong>Name:</strong> {option.account.accountHolderName}</div>}
+                        {option.account.accountNumber && <div><strong>Acc:</strong> {option.account.accountNumber}</div>}
+                        {option.account.bankBranch && <div><strong>Branch:</strong> {option.account.bankBranch}</div>}
+                        {!option.account.bankName && !option.account.accountHolderName && !option.account.accountNumber && !option.account.bankBranch && (
+                          <div style={{ color: "#64748b" }}>No bank details provided</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {accountOptions.length === 0 && (
+                    <div style={{ padding: "10px", color: "#64748b", textAlign: "center", fontSize: "0.9rem" }}>
+                      No payment accounts available
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            {/* Hidden native input for react-hook-form registration and validation */}
+            <input 
+              type="hidden" 
+              {...register("paymentAccountId")} 
+            />
+
             {errors.paymentAccountId?.message ? (
               <p className={styles.validationText}>{errors.paymentAccountId.message}</p>
             ) : null}
+
+            <label className={styles.label} htmlFor="amount">
+              Title
+            </label>
+            <input
+              id="title"
+              className={styles.input}
+              type="text"
+              maxLength={200}
+              placeholder="Payment title"
+              disabled={submitting}
+              {...register("title")}
+            />
+            {errors.title?.message ? <p className={styles.validationText}>{errors.title.message}</p> : null}
 
             <label className={styles.label} htmlFor="amount">
               Amount
@@ -295,17 +436,8 @@ export default function ClientPaymentsDashboard() {
             />
             {errors.amount?.message ? <p className={styles.validationText}>{errors.amount.message}</p> : null}
 
-            <label className={styles.label} htmlFor="paymentDate">
-              Date
-            </label>
-            <input
-              id="paymentDate"
-              className={styles.input}
-              type="date"
-              disabled={submitting}
-              {...register("paymentDate")}
-            />
-            {errors.paymentDate?.message ? <p className={styles.validationText}>{errors.paymentDate.message}</p> : null}
+            <div />
+            <div />
           </div>
 
           <div>
@@ -383,7 +515,7 @@ export default function ClientPaymentsDashboard() {
                     <td>#{row.id}</td>
                     <td>{formatDate(row.payment_date)}</td>
                     <td>{accountNameMap[row.payment_account_id] || `#${row.payment_account_id}`}</td>
-                    <td>{row.description || "-"}</td>
+                    <td>{row.title || row.description || "-"}</td>
                     <td className={styles.numericCell}>{formatCurrency(row.amount)}</td>
                     <td>
                       {row.document_link ? (

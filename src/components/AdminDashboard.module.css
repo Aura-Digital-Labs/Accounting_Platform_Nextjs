@@ -184,6 +184,13 @@
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
+.input[readonly],
+.input:disabled {
+  background-color: #f1f5f9;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
 .label {
   display: grid;
   gap: 0.35rem;
@@ -291,6 +298,104 @@
   gap: 0.4rem;
   font-size: 0.86rem;
   color: #1f2937;
+}
+
+.multiSelectWrap {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.selectedSlotWrap {
+  min-height: 2.5rem;
+  border: 1px solid #d4dce9;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.45rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.slotHelperText {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.83rem;
+}
+
+.slotChip {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.slotChip:hover {
+  background: #dbeafe;
+}
+
+.slotChipClose {
+  font-size: 0.78rem;
+  color: #1e40af;
+}
+
+.searchDropdownWrap {
+  position: relative;
+}
+
+.searchDropdownPanel {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow: auto;
+  background: #ffffff;
+  border: 1px solid #d4dce9;
+  border-radius: 10px;
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.14);
+  z-index: 30;
+}
+
+.dropdownOption,
+.dropdownOptionSelected {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid #edf2fb;
+  background: #ffffff;
+  color: #1f2937;
+  font-size: 0.85rem;
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dropdownOption:hover,
+.dropdownOptionSelected:hover {
+  background: #f8fbff;
+}
+
+.dropdownOptionSelected {
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.dropdownEmpty {
+  margin: 0;
+  padding: 0.7rem;
+  color: #64748b;
+  font-size: 0.84rem;
 }
 
 .tableWrap {
@@ -634,4 +739,11 @@
   .buttonGrid {
     grid-template-columns: 1fr;
   }
+}
+
+.formRowGroup {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
 }

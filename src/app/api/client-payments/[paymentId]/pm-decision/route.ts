@@ -20,7 +20,7 @@ export async function PATCH(
     }
 
     const { paymentId } = await params;
-    const id = Number(paymentId);
+    const id = String(paymentId);
     const body = await req.json();
 
     const payment = await prisma.clientPayment.findUnique({ where: { id } });
@@ -57,10 +57,20 @@ export async function PATCH(
       where: { id },
       data: {
         status: body.status,
-        approvedByPmId: currentUser.id,
-        pmApprovalDate: new Date(),
+        confirmedBy: currentUser.id,
+        confirmedAt: new Date(),
         pmApprovalNotes: body.pm_approval_notes || null,
       },
+    });
+
+    const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
+    await logAuditAction({
+      userId: currentUser.id,
+      action: body.status === "approved_by_pm" ? AuditAction.PAYMENT_APPROVED_PM : AuditAction.PAYMENT_REJECTED_PM,
+      resourceType: "ClientPayment",
+      resourceId: id.toString(),
+      description: `PM ${body.status === "approved_by_pm" ? "approved" : "rejected"} payment ${id}`,
+      status: "success",
     });
 
     return NextResponse.json(updated);

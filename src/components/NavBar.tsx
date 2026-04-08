@@ -10,6 +10,21 @@ export default function NavBar() {
   const { data: session } = useSession();
   const pathname = usePathname();
 
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    } catch {
+      // Ignore network errors here; still proceed with sign-out.
+    }
+
+    await signOut({ callbackUrl: "/login" });
+  };
+
   if (!session?.user) return null;
 
   return (
@@ -46,7 +61,19 @@ export default function NavBar() {
             Expenses
           </Link>
         )}
-        {session.user.role === "admin" && (
+        {(session.user.role === "admin" || session.user.role === "financial_officer") && (
+          <Link
+            href={session.user.role === "financial_officer" ? "/financial-officer/settings" : "/settings"}
+            className={
+              pathname === "/settings" || pathname === "/financial-officer/settings"
+                ? styles.active
+                : ""
+            }
+          >
+            Settings
+          </Link>
+        )}
+        {(session.user.role === "admin" || session.user.role === "financial_officer") && (
           <Link
             href="/accounts/closed"
             className={pathname === "/accounts/closed" ? styles.active : ""}
@@ -54,12 +81,20 @@ export default function NavBar() {
             Closed Accounts
           </Link>
         )}
+        {(session.user.role === "admin" || session.user.role === "financial_officer") && (
+          <Link
+            href="/logs"
+            className={pathname === "/logs" ? styles.active : ""}
+          >
+            System Logs
+          </Link>
+        )}
       </div>
 
       <div className={styles.userSection}>
         <span className={styles.userRole}>{session.user.role}</span>
         <span className={styles.userEmail}>{session.user.email}</span>
-        <button onClick={() => signOut({ callbackUrl: "/login" })} className={styles.logoutBtn}>
+        <button onClick={handleLogout} className={styles.logoutBtn}>
           Sign Out
         </button>
       </div>

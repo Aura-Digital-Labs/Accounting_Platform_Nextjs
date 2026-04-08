@@ -2,6 +2,7 @@
 
 export const UserRole = {
   ADMIN: "admin",
+  FINANCIAL_OFFICER: "financial_officer",
   EMPLOYEE: "employee",
   CLIENT: "client",
   PROJECT_MANAGER: "project_manager",
@@ -138,7 +139,7 @@ export interface TransactionRead {
 export interface UserCreate {
   email: string;
   username?: string | null;
-  fullName: string;
+  name: string;
   password: string;
   role?: UserRole;
 }
@@ -147,7 +148,7 @@ export interface UserRead {
   id: number;
   email: string;
   username: string | null;
-  fullName: string;
+  name: string;
   role: UserRole;
   isActive: boolean;
   pettyCashAccountId: number | null;
@@ -222,7 +223,7 @@ export interface ProjectManagerRead {
   id: number;
   email: string;
   username: string | null;
-  fullName: string;
+  name: string;
   role: UserRole;
   isActive: boolean;
   pettyCashAccountId: number | null;

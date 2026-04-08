@@ -34,13 +34,13 @@ function getCurrentYearMonth() {
 function getTimelineMonths() {
   const now = new Date();
   return Array.from({ length: 12 }, (_, index) => {
-    const offset = index - 6;
+    const offset = index - 11;
     const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
     const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     return {
       ym,
       monthNumber: d.getMonth() + 1,
-      isCurrent: index === 6,
+      isCurrent: index === 11,
     };
   });
 }

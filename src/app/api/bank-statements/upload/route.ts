@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireAdmin, AuthError } from "@/lib/auth";
 import { uploadBytesToGoogleDrive } from "@/lib/googleDrive";
+
+function isBankStatementStorageMissing(error: unknown) {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    (error.code === "P2021" || error.code === "P2022")
+  );
+}
 
 /**
  * POST /api/bank-statements/upload (authenticated admins/employees, depending on your rules; here we restrict to admins for safety or allow authenticated)
@@ -67,10 +75,26 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
+    await logAuditAction({
+      userId: currentUser.id,
+      action: AuditAction.BANK_STATEMENT_UPLOADED,
+      resourceType: "BankStatement",
+      resourceId: statement.id.toString(),
+      description: `Bank statement uploaded for account ${accountId} month ${month}`,
+      status: "success",
+    });
+
     return NextResponse.json(statement, { status: 201 });
   } catch (error: unknown) {
     if (error instanceof AuthError) {
       return NextResponse.json({ detail: error.message }, { status: error.status });
+    }
+    if (isBankStatementStorageMissing(error)) {
+      return NextResponse.json(
+        { detail: "Bank statement storage is not initialized in this database" },
+        { status: 503 }
+      );
     }
     const message = error instanceof Error ? error.message : "Failed to upload bank statement";
     return NextResponse.json({ detail: message }, { status: 500 });

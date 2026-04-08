@@ -5,7 +5,7 @@ type StatusBadgeProps = {
 const STATUS_STYLES: Record<string, string> = {
   pending: "bg-amber-100 text-amber-800 ring-amber-200",
   approved: "bg-emerald-100 text-emerald-800 ring-emerald-200",
-  approved_by_pm: "bg-sky-100 text-sky-800 ring-sky-200",
+  approved_by_pm: "bg-yellow-100 text-yellow-800 ring-yellow-200",
   rejected: "bg-red-100 text-red-800 ring-red-200",
   rejected_by_pm: "bg-rose-100 text-rose-800 ring-rose-200",
 };

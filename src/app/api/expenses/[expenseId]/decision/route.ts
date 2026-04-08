@@ -1,13 +1,19 @@
+import { syncProjectFinanceStatus } from "@/lib/projectFinance";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, AuthError } from "@/lib/auth";
 import { createTransaction, AccountingError } from "@/lib/accounting";
 import { Decimal } from "@prisma/client/runtime/library";
+import {
+  getExpenseByIdRaw,
+  hasExpenseStatusEnum,
+  updateExpenseRaw,
+} from "@/lib/expenseStorage";
 
 /**
  * Helper: get or create employee payable account
  */
-async function getEmployeeAccount(employeeId: number) {
+async function getEmployeeAccount(employeeId: string) {
   const code = `EMP-${employeeId}`;
   let account = await prisma.account.findUnique({ where: { code } });
   if (!account) {
@@ -58,10 +64,13 @@ export async function PATCH(
   try {
     const currentUser = await requireAdmin();
     const { expenseId } = await params;
-    const id = Number(expenseId);
+    const id = String(expenseId);
     const body = await req.json();
 
-    const expense = await prisma.expense.findUnique({ where: { id } });
+    const hasEnumExpenseStatus = await hasExpenseStatusEnum();
+    const expense = hasEnumExpenseStatus
+      ? await prisma.expense.findUnique({ where: { id } })
+      : await getExpenseByIdRaw(id);
     if (!expense) {
       return NextResponse.json({ detail: "Expense not found" }, { status: 404 });
     }
@@ -86,40 +95,159 @@ export async function PATCH(
       }
     }
 
-    // Update in a Prisma transaction
-    const updated = await prisma.$transaction(async (tx) => {
+    let updated;
+    if (hasEnumExpenseStatus) {
+      updated = await prisma.$transaction(async (tx) => {
+        if (normalizedFinalAmount !== null) {
+          await tx.expense.update({
+            where: { id },
+            data: { finalExpenseAmount: normalizedFinalAmount },
+          });
+        }
+
+        if (body.status === "approved") {
+          const project = await tx.project.findUnique({ where: { id: expense.projectId } });
+          if (!project) throw new AccountingError(404, "Project not found");
+
+          const projectAccount = await tx.account.findUnique({ where: { id: project.accountId } });
+          if (!projectAccount) throw new AccountingError(404, "Project account not found");
+
+          if (projectAccount.type !== "asset") {
+            await tx.account.update({
+              where: { id: projectAccount.id },
+              data: { type: "asset" },
+            });
+          }
+
+          const submitter = await tx.user.findUnique({ where: { id: expense.employeeId } });
+          if (!submitter) throw new AccountingError(404, "Expense submitter not found");
+
+          let creditAccount;
+          if (expense.paymentSource === "petty_cash") {
+            if (!submitter.pettyCashAccountId) {
+              throw new AccountingError(400, "Submitter has no petty cash account");
+            }
+            creditAccount = await tx.account.findUnique({
+              where: { id: submitter.pettyCashAccountId },
+            });
+            if (!creditAccount) throw new AccountingError(404, "Petty cash account not found");
+          } else {
+            creditAccount = await getEmployeeAccount(expense.employeeId);
+          }
+
+          const originalAmount = Number(expense.amount);
+          const finalAmount = normalizedFinalAmount
+            ? Number(normalizedFinalAmount)
+            : originalAmount;
+
+          if (finalAmount < originalAmount) {
+            throw new AccountingError(400, "Final amount cannot be less than original amount");
+          }
+
+          const profitAmount = finalAmount - originalAmount;
+          const projectLabel = project.name || `Project ${project.id}`;
+          const expenseLabel = (expense.description || "Expense").trim();
+
+          const baseTx = await createTransaction(
+            {
+              description: `${projectLabel} expense #${expense.id} - base (${expenseLabel})`,
+              sourceType: "expense",
+              sourceId: expense.id,
+              documentLink: expense.receiptPath,
+              entries: [
+                { accountId: project.accountId, entryType: "debit", amount: originalAmount },
+                { accountId: creditAccount.id, entryType: "credit", amount: originalAmount },
+              ],
+            },
+            currentUser.id
+          );
+
+          const expenseDate = new Date(expense.expenseDate);
+
+          await tx.transaction.update({
+            where: { id: baseTx.id },
+            data: {
+              postedAt: new Date(
+                expenseDate.getFullYear(),
+                expenseDate.getMonth(),
+                expenseDate.getDate()
+              ),
+            },
+          });
+
+          await tx.expense.update({
+            where: { id },
+            data: {
+              status: "approved",
+              createdTransactionId: baseTx.id,
+            },
+          });
+
+          if (profitAmount > 0) {
+            const profitAccount = await getComponentProfitAccount();
+
+            const profitTx = await createTransaction(
+              {
+                description: `${projectLabel} expense #${expense.id} - profit (${expenseLabel})`,
+                sourceType: "expense_profit",
+                sourceId: expense.id,
+                documentLink: expense.receiptPath,
+                entries: [
+                  { accountId: project.accountId, entryType: "debit", amount: profitAmount },
+                  { accountId: profitAccount.id, entryType: "credit", amount: profitAmount },
+                ],
+              },
+              currentUser.id
+            );
+
+            await tx.transaction.update({
+              where: { id: profitTx.id },
+              data: {
+                postedAt: new Date(
+                  expenseDate.getFullYear(),
+                  expenseDate.getMonth(),
+                  expenseDate.getDate()
+                ),
+              },
+            });
+          }
+        } else {
+          await tx.expense.update({
+            where: { id },
+            data: { status: body.status },
+          });
+        }
+
+        return tx.expense.findUnique({ where: { id } });
+      });
+    } else {
       if (normalizedFinalAmount !== null) {
-        await tx.expense.update({
-          where: { id },
-          data: { finalExpenseAmount: normalizedFinalAmount },
-        });
+        await updateExpenseRaw(id, { finalExpenseAmount: normalizedFinalAmount });
       }
 
       if (body.status === "approved") {
-        const project = await tx.project.findUnique({ where: { id: expense.projectId } });
+        const project = await prisma.project.findUnique({ where: { id: expense.projectId } });
         if (!project) throw new AccountingError(404, "Project not found");
 
-        const projectAccount = await tx.account.findUnique({ where: { id: project.accountId } });
+        const projectAccount = await prisma.account.findUnique({ where: { id: project.accountId } });
         if (!projectAccount) throw new AccountingError(404, "Project account not found");
 
-        // Ensure project account type is ASSET
         if (projectAccount.type !== "asset") {
-          await tx.account.update({
+          await prisma.account.update({
             where: { id: projectAccount.id },
             data: { type: "asset" },
           });
         }
 
-        const submitter = await tx.user.findUnique({ where: { id: expense.employeeId } });
+        const submitter = await prisma.user.findUnique({ where: { id: expense.employeeId } });
         if (!submitter) throw new AccountingError(404, "Expense submitter not found");
 
-        // Determine credit account based on payment source
         let creditAccount;
         if (expense.paymentSource === "petty_cash") {
           if (!submitter.pettyCashAccountId) {
             throw new AccountingError(400, "Submitter has no petty cash account");
           }
-          creditAccount = await tx.account.findUnique({
+          creditAccount = await prisma.account.findUnique({
             where: { id: submitter.pettyCashAccountId },
           });
           if (!creditAccount) throw new AccountingError(404, "Petty cash account not found");
@@ -140,7 +268,6 @@ export async function PATCH(
         const projectLabel = project.name || `Project ${project.id}`;
         const expenseLabel = (expense.description || "Expense").trim();
 
-        // Base expense: project <- debit -> employee/petty cash payable
         const baseTx = await createTransaction(
           {
             description: `${projectLabel} expense #${expense.id} - base (${expenseLabel})`,
@@ -155,28 +282,24 @@ export async function PATCH(
           currentUser.id
         );
 
-        // Update posted_at to expense date
-        await tx.transaction.update({
+        const expenseDate = new Date(expense.expenseDate);
+
+        await prisma.transaction.update({
           where: { id: baseTx.id },
           data: {
             postedAt: new Date(
-              expense.expenseDate.getFullYear(),
-              expense.expenseDate.getMonth(),
-              expense.expenseDate.getDate()
+              expenseDate.getFullYear(),
+              expenseDate.getMonth(),
+              expenseDate.getDate()
             ),
           },
         });
 
-        // Store the transaction ID on the expense
-        await tx.expense.update({
-          where: { id },
-          data: {
-            status: "approved",
-            createdTransactionId: baseTx.id,
-          },
+        await updateExpenseRaw(id, {
+          status: "approved",
+          createdTransactionId: baseTx.id,
         });
 
-        // Profit component: project <- debit -> component profit revenue
         if (profitAmount > 0) {
           const profitAccount = await getComponentProfitAccount();
 
@@ -194,28 +317,25 @@ export async function PATCH(
             currentUser.id
           );
 
-          await tx.transaction.update({
+          await prisma.transaction.update({
             where: { id: profitTx.id },
             data: {
               postedAt: new Date(
-                expense.expenseDate.getFullYear(),
-                expense.expenseDate.getMonth(),
-                expense.expenseDate.getDate()
+                expenseDate.getFullYear(),
+                expenseDate.getMonth(),
+                expenseDate.getDate()
               ),
             },
           });
         }
       } else {
-        // Rejected
-        await tx.expense.update({
-          where: { id },
-          data: { status: body.status },
-        });
+        await updateExpenseRaw(id, { status: body.status });
       }
 
-      return tx.expense.findUnique({ where: { id } });
-    });
+      updated = await getExpenseByIdRaw(id);
+    }
 
+    await syncProjectFinanceStatus(expense.projectId);
     return NextResponse.json(updated);
   } catch (error: unknown) {
     if (error instanceof AuthError) {

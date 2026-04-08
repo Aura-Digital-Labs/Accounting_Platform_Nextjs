@@ -1,0 +1,1 @@
+console.log('Password Match:', require('bcryptjs').compareSync('Wimukthi2000', '$2a$10$QxXDA16MbKb5CWqMieyveevKo1LCgUT8HvB33Mkb9qYZ2jMvzZuOy'))

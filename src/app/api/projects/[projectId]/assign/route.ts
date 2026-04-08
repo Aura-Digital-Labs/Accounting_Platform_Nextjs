@@ -13,29 +13,33 @@ export async function POST(
   try {
     await requireAdmin();
     const { projectId } = await params;
-    const pId = Number(projectId);
+      const pId = String(projectId);
     const body = await req.json();
-    const employeeId = Number(body.employee_id);
+      const userId = String(body.user_id || body.employee_id || "").trim();
+
+      if (!userId) {
+        return NextResponse.json({ detail: "user_id is required" }, { status: 400 });
+      }
 
     const project = await prisma.project.findUnique({ where: { id: pId } });
     if (!project) {
       return NextResponse.json({ detail: "Project not found" }, { status: 404 });
     }
 
-    const employee = await prisma.user.findUnique({ where: { id: employeeId } });
+    const employee = await prisma.user.findUnique({ where: { id: userId } });
     if (!employee || employee.role !== "employee") {
       return NextResponse.json({ detail: "Employee not found or invalid role" }, { status: 400 });
     }
 
     const existing = await prisma.projectAssignment.findFirst({
-      where: { projectId: pId, employeeId },
+      where: { projectId: pId, userId },
     });
     if (existing) {
       return NextResponse.json({ detail: "Employee already assigned" }, { status: 400 });
     }
 
     const assignment = await prisma.projectAssignment.create({
-      data: { projectId: pId, employeeId },
+      data: { projectId: pId, userId },
     });
 
     return NextResponse.json(assignment, { status: 201 });

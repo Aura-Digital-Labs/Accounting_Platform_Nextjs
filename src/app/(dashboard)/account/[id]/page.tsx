@@ -9,8 +9,9 @@ export default async function AccountLedgerPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  let user;
   try {
-    await requireAdmin();
+    user = await requireAdmin();
   } catch (error: unknown) {
     if (error instanceof AuthError && error.status === 401) {
       redirect("/login");
@@ -25,5 +26,5 @@ export default async function AccountLedgerPage({
     redirect("/");
   }
 
-  return <AccountTransactionsClient accountId={accountId} />;
+  return <AccountTransactionsClient accountId={accountId} isReadOnly={user.role === "admin"} />;
 }

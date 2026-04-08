@@ -14,32 +14,79 @@ export async function GET() {
   try {
     await requireAdmin();
 
-    const transactions = await prisma.transaction.findMany({
-      orderBy: { postedAt: "desc" },
-      include: {
-        entries: {
-          select: {
-            accountId: true,
-            entryType: true,
-            amount: true,
+    try {
+      const transactions = await prisma.transaction.findMany({
+        orderBy: { postedAt: "desc" },
+        include: {
+          entries: {
+            select: {
+              accountId: true,
+              entryType: true,
+              amount: true,
+            },
           },
         },
-      },
-      take: 500,
-    });
+        take: 500,
+      });
 
-    return NextResponse.json(
-      transactions.map((tx) => ({
-        id: tx.id,
-        description: tx.description,
-        posted_at: tx.postedAt,
-        entries: tx.entries.map((entry) => ({
-          account_id: entry.accountId,
-          entry_type: entry.entryType,
-          amount: Number(entry.amount),
-        })),
-      }))
-    );
+      return NextResponse.json(
+        transactions.map((tx) => ({
+          id: tx.id,
+          description: tx.description,
+          posted_at: tx.postedAt,
+          entries: tx.entries.map((entry) => ({
+            account_id: entry.accountId,
+            entry_type: entry.entryType,
+            amount: Number(entry.amount),
+          })),
+        }))
+      );
+    } catch {
+      const txRows = (await prisma.$queryRawUnsafe(`
+        SELECT id, description, posted_at
+        FROM transactions
+        ORDER BY posted_at DESC
+        LIMIT 500
+      `)) as Array<{ id: number; description: string; posted_at: Date | string }>;
+
+      if (txRows.length === 0) {
+        return NextResponse.json([]);
+      }
+
+      const ids = txRows.map((row) => row.id).join(",");
+      const entryRows = (await prisma.$queryRawUnsafe(`
+        SELECT transaction_id, account_id, entry_type::text AS entry_type, amount
+        FROM transaction_entries
+        WHERE transaction_id IN (${ids})
+        ORDER BY id ASC
+      `)) as Array<{
+        transaction_id: number;
+        account_id: number;
+        entry_type: string;
+        amount: number | string;
+      }>;
+
+      const byTx = new Map<number, Array<{ account_id: number; entry_type: string; amount: number }>>();
+      for (const row of entryRows) {
+        const normalized = String(row.entry_type || "").toLowerCase();
+        const list = byTx.get(row.transaction_id) || [];
+        list.push({
+          account_id: row.account_id,
+          entry_type: normalized === "credit" ? "credit" : "debit",
+          amount: Number(row.amount),
+        });
+        byTx.set(row.transaction_id, list);
+      }
+
+      return NextResponse.json(
+        txRows.map((tx) => ({
+          id: tx.id,
+          description: tx.description,
+          posted_at: tx.posted_at,
+          entries: byTx.get(tx.id) || [],
+        }))
+      );
+    }
   } catch (error: unknown) {
     if (error instanceof AuthError) {
       return NextResponse.json({ detail: error.message }, { status: error.status });
@@ -64,6 +111,7 @@ export async function POST(req: NextRequest) {
     let amount: number;
     let reference: string | null = null;
     let documentLink: string | null = null;
+    let uploadWarning: string | null = null;
 
     if (contentType.includes("multipart/form-data")) {
       const formData = await req.formData();
@@ -85,10 +133,9 @@ export async function POST(req: NextRequest) {
             prefix: `transaction-${user.id}`,
           });
         } catch (err) {
-          return NextResponse.json(
-            { detail: `Document upload unavailable: ${err instanceof Error ? err.message : err}` },
-            { status: 503 }
-          );
+          // Do not block accounting entries when attachment upload is unavailable.
+          uploadWarning = `Document upload unavailable: ${err instanceof Error ? err.message : err}`;
+          documentLink = null;
         }
       }
     } else {
@@ -115,7 +162,20 @@ export async function POST(req: NextRequest) {
       user.id
     );
 
-    return NextResponse.json(transaction, { status: 201 });
+    const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
+    await logAuditAction({
+      userId: user.id,
+      action: AuditAction.TRANSACTION_CREATED,
+      resourceType: "Transaction",
+      resourceId: transaction.id.toString(),
+      description: `Manual transaction created: ${description} for amount ${amount}`,
+      status: "success",
+    });
+
+    return NextResponse.json(
+      uploadWarning ? { ...transaction, upload_warning: uploadWarning } : transaction,
+      { status: 201 }
+    );
   } catch (error: unknown) {
     if (error instanceof AuthError) {
       return NextResponse.json({ detail: error.message }, { status: error.status });

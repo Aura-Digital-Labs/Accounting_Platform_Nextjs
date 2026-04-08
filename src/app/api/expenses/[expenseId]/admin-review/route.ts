@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, AuthError } from "@/lib/auth";
+import {
+  getExpenseByIdRaw,
+  hasExpenseStatusEnum,
+  updateExpenseRaw,
+} from "@/lib/expenseStorage";
 
 /**
  * PATCH /api/expenses/[expenseId]/admin-review
@@ -15,8 +20,8 @@ export async function PATCH(
     await requireAdmin();
 
     const { expenseId } = await params;
-    const id = Number(expenseId);
-    if (!Number.isFinite(id) || id <= 0) {
+    const id = String(expenseId);
+    if (!id) {
       return NextResponse.json({ detail: "Invalid expense id" }, { status: 400 });
     }
 
@@ -30,7 +35,10 @@ export async function PATCH(
       );
     }
 
-    const expense = await prisma.expense.findUnique({ where: { id } });
+    const hasEnumExpenseStatus = await hasExpenseStatusEnum();
+    const expense = hasEnumExpenseStatus
+      ? await prisma.expense.findUnique({ where: { id } })
+      : await getExpenseByIdRaw(id);
     if (!expense) {
       return NextResponse.json({ detail: "Expense not found" }, { status: 404 });
     }
@@ -39,11 +47,26 @@ export async function PATCH(
       return NextResponse.json({ detail: "Expense has already been processed" }, { status: 400 });
     }
 
-    const updated = await prisma.expense.update({
-      where: { id },
-      data: {
-        finalExpenseAmount: new Decimal(normalizedFinalAmount.toFixed(2)),
-      },
+    const updated = hasEnumExpenseStatus
+      ? await prisma.expense.update({
+          where: { id },
+          data: {
+            finalExpenseAmount: new Decimal(normalizedFinalAmount.toFixed(2)),
+          },
+        })
+      : await updateExpenseRaw(id, {
+          finalExpenseAmount: new Decimal(normalizedFinalAmount.toFixed(2)),
+        });
+
+    const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
+    const currentUser = await requireAdmin();
+    await logAuditAction({
+      userId: currentUser.id,
+      action: AuditAction.EXPENSE_UPDATED,
+      resourceType: "Expense",
+      resourceId: id.toString(),
+      description: `Admin updated final expense amount to ${normalizedFinalAmount.toFixed(2)} for expense ${id}`,
+      status: "success",
     });
 
     return NextResponse.json(updated);

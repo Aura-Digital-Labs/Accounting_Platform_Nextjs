@@ -1,0 +1,31 @@
+{
+  "Accounting Platform": {
+    "Projects": {
+      "Project_1": {
+        "Payments": {},
+        "Expenses": {}
+      },
+      "Project_2": {
+        "Payments": {},
+        "Expenses": {}
+      }
+    },
+    "Financial_Records": {
+      "Bank_Statements": {
+        "Bank_1": {},
+        "Bank_2": {}
+      },
+      "Fixed_Deposits": {
+        "FD_1": {},
+        "FD_2": {}
+      }
+    },
+    "Backups": {
+      "Database_Backups": {
+      },
+      "Logs": {
+      }
+    },
+    "Other": {}
+  }
+}

@@ -1,30 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./AdminDashboard.module.css";
 import PendingExpensesTable, { PendingExpenseGroup } from "./PendingExpensesTable";
 import BankStatementsDashboard from "./BankStatementsDashboard";
 
 type UserRow = {
-  id: number;
+  id: string;
   email: string;
   username: string | null;
+  name?: string;
   full_name: string;
-  role: "admin" | "employee" | "project_manager" | "client";
+  role: "admin" | "financial_officer" | "employee" | "project_manager" | "client";
 };
 
 type ProjectRow = {
-  id: number;
+  id: string;
   code: string;
   name: string;
   description: string | null;
   budget: number;
+  status: string | null;
+  finance_status?: string | null;
   account_id: number;
-  client_id: number | null;
-  client_username?: string | null;
-  client_password?: string | null;
-  employee_ids?: number[];
+  client_id: string | null;
+  user_ids?: string[];
+  employee_ids?: string[];
+  client_ids?: string[];
 };
 
 type AccountRow = {
@@ -32,7 +35,7 @@ type AccountRow = {
   code: string;
   name: string;
   type: "asset" | "liability" | "equity" | "revenue" | "expense";
-  projectId: number | null;
+  projectId: string | null;
   includeCashFlow: boolean;
   isPaymentAccepting: boolean;
   isPettyCash: boolean;
@@ -59,9 +62,9 @@ type CashFlowReport = {
 };
 
 type ExpenseRow = {
-  id: number;
-  projectId: number;
-  employeeId: number;
+  id: string;
+  projectId: string;
+  employeeId: string;
   description: string;
   amount: number;
   expenseDate: string;
@@ -69,8 +72,8 @@ type ExpenseRow = {
   finalExpenseAmount: number | null;
   status: "pending" | "approved_by_pm" | "approved" | "rejected" | "rejected_by_pm";
   lineItems?: {
-    id: number;
-    projectId?: number;
+    id: string;
+    projectId?: string;
     project?: string;
     amountOriginal: number;
     amountFinal: number;
@@ -78,12 +81,13 @@ type ExpenseRow = {
 };
 
 type PaymentRow = {
-  id: number;
-  project_id: number;
-  client_id: number;
+  id: string;
+  project_id: string;
+  client_id: string;
   project_name: string;
   client_name: string | null;
   payment_account_id: number;
+  title?: string;
   amount: number;
   payment_date: string;
   description: string | null;
@@ -93,12 +97,13 @@ type PaymentRow = {
 };
 
 type ProjectManagerRow = {
-  id: number;
+  id: string;
   email: string;
   username: string | null;
+  name?: string;
   full_name: string;
   petty_cash_account_id: number | null;
-  managed_project_ids: number[];
+  managed_project_ids: string[];
 };
 
 type TransactionRow = {
@@ -150,7 +155,7 @@ const EMPTY_PAYLOAD: DashboardPayload = {
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency: "LKR",
     maximumFractionDigits: 2,
   }).format(Number(amount || 0));
 }
@@ -179,7 +184,139 @@ async function readJson<T>(url: string): Promise<T> {
   return payload as T;
 }
 
-export default function AdminDashboard({ displayName }: { displayName: string }) {
+type SelectOption = {
+  id: string;
+  label: string;
+};
+
+function SearchableMultiSelect({
+  title,
+  options,
+  selectedIds,
+  onToggle,
+  placeholder,
+  emptyText,
+}: {
+  title: string;
+  options: SelectOption[];
+  selectedIds: string[];
+  onToggle: (id: string) => void;
+  placeholder: string;
+  emptyText: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+  const selectedOptions = useMemo(
+    () => options.filter((option) => selectedSet.has(option.id)),
+    [options, selectedSet]
+  );
+
+  const filteredOptions = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return options;
+    return options.filter((option) => option.label.toLowerCase().includes(term));
+  }, [options, query]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!wrapperRef.current || !target) return;
+      if (!wrapperRef.current.contains(target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, []);
+
+  return (
+    <div className={styles.multiSelectWrap} ref={wrapperRef}>
+      <h4 className={styles.subTitle}>{title}</h4>
+
+      <div className={styles.selectedSlotWrap}>
+        {selectedOptions.length === 0 ? (
+          <p className={styles.slotHelperText}>No selections yet.</p>
+        ) : (
+          selectedOptions.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={styles.slotChip}
+              onClick={() => onToggle(option.id)}
+              title="Click to remove"
+            >
+              {option.label}
+              <span className={styles.slotChipClose}>x</span>
+            </button>
+          ))
+        )}
+      </div>
+
+      <div className={styles.searchDropdownWrap}>
+        <input
+          className={styles.input}
+          value={query}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setOpen(false);
+            }
+          }}
+          placeholder={placeholder}
+        />
+
+        {open && (
+          <div className={styles.searchDropdownPanel}>
+            {filteredOptions.length === 0 ? (
+              <p className={styles.dropdownEmpty}>{emptyText}</p>
+            ) : (
+              filteredOptions.map((option) => {
+                const isSelected = selectedSet.has(option.id);
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={isSelected ? styles.dropdownOptionSelected : styles.dropdownOption}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                    }}
+                    onClick={() => onToggle(option.id)}
+                  >
+                    <span>{option.label}</span>
+                    <span>{isSelected ? "Selected" : "Add"}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function AdminDashboard({
+  displayName,
+  dashboardTitle = "Admin Dashboard",
+  isReadOnly = false,
+  topContent,
+}: {
+  displayName: string;
+  dashboardTitle?: string;
+  isReadOnly?: boolean;
+  topContent?: React.ReactNode;
+}) {
   const [data, setData] = useState<DashboardPayload>(EMPTY_PAYLOAD);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -191,6 +328,10 @@ export default function AdminDashboard({ displayName }: { displayName: string })
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [showClosedAccounts, setShowClosedAccounts] = useState(false);
+  const [showPendingProjects, setShowPendingProjects] = useState(false);
+
+  const [creatingAccountForProjectId, setCreatingAccountForProjectId] = useState<string | null>(null);
+  const [pendingAccountForm, setPendingAccountForm] = useState({ code: "", name: "" });
 
   const [userForm, setUserForm] = useState({ fullName: "", email: "", password: "" });
   const [pmForm, setPmForm] = useState({
@@ -200,7 +341,8 @@ export default function AdminDashboard({ displayName }: { displayName: string })
     pettyCashAccountId: "",
   });
   const [projectForm, setProjectForm] = useState({ name: "", budget: "", description: "" });
-  const [createProjectEmployeeIds, setCreateProjectEmployeeIds] = useState<number[]>([]);
+  const [createProjectEmployeeIds, setCreateProjectEmployeeIds] = useState<string[]>([]);
+  const [createProjectClientIds, setCreateProjectClientIds] = useState<string[]>([]);
   const [accountForm, setAccountForm] = useState({
     code: "",
     name: "",
@@ -208,17 +350,22 @@ export default function AdminDashboard({ displayName }: { displayName: string })
     includeCashFlow: false,
     isPaymentAccepting: false,
     isPettyCash: false,
+    accountNumber: "",
+    accountHolderName: "",
+    bankName: "",
+    bankBranch: "",
   });
 
-  const [editingPmId, setEditingPmId] = useState<number | null>(null);
+  const [editingPmId, setEditingPmId] = useState<string | null>(null);
   const [editPmPettyCash, setEditPmPettyCash] = useState("");
-  const [editPmProjects, setEditPmProjects] = useState<number[]>([]);
-  const [editingProjectId, setEditingProjectId] = useState<number | null>(null);
+  const [editPmProjects, setEditPmProjects] = useState<string[]>([]);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editProjectForm, setEditProjectForm] = useState({
     name: "",
     budget: "",
     description: "",
-    employeeIds: [] as number[],
+    employeeIds: [] as string[],
+    clientIds: [] as string[],
   });
 
   const [txDescription, setTxDescription] = useState("");
@@ -297,7 +444,7 @@ export default function AdminDashboard({ displayName }: { displayName: string })
   }, [data.accounts]);
 
   const projectMap = useMemo(() => {
-    const map = new Map<number, ProjectRow>();
+    const map = new Map<string, ProjectRow>();
     data.projects.forEach((p) => map.set(p.id, p));
     return map;
   }, [data.projects]);
@@ -351,12 +498,12 @@ export default function AdminDashboard({ displayName }: { displayName: string })
           ? expense.lineItems.map((item, idx) => {
               const itemProject =
                 item.project ||
-                (typeof item.projectId === "number"
+                (typeof item.projectId === "string"
                   ? data.projects.find((p) => p.id === item.projectId)
                   : data.projects.find((p) => p.id === expense.projectId));
 
               return {
-                id: item.id || expense.id * 100 + idx + 1,
+                id: String(item.id || `${expense.id}-${idx + 1}`),
                 expenseId: expense.id,
                 project:
                   typeof itemProject === "string"
@@ -371,7 +518,7 @@ export default function AdminDashboard({ displayName }: { displayName: string })
             })
           : [
               {
-                id: expense.id * 100 + 1,
+                id: `${expense.id}-1`,
                 expenseId: expense.id,
                 project: (() => {
                   const project = data.projects.find((p) => p.id === expense.projectId);
@@ -410,20 +557,31 @@ export default function AdminDashboard({ displayName }: { displayName: string })
   }, [pendingExpenses, data.users, data.projects]);
 
   const pendingPayments = useMemo(
-    () => data.payments.filter((p) => p.status === "approved_by_pm"),
+    () => data.payments.filter((p) => {
+      const s = String(p.status).toLowerCase();
+      return s === "pending" || s === "approved_by_pm";
+    }),
     [data.payments]
   );
 
   const customAccounts = useMemo(
     () =>
       data.accounts.filter(
-        (a) => a.projectId === null && !a.code.startsWith("EMP-") && !a.code.startsWith("ADM-")
+        (a) =>
+          a.projectId === null &&
+          !a.code.toUpperCase().startsWith("EMP-") &&
+          !a.code.toUpperCase().startsWith("PRJ-")
       ),
     [data.accounts]
   );
 
   const employerAccounts = useMemo(() => {
-    const employees = data.users.filter((u) => u.role === "employee");
+    const employees = data.users.filter(
+      (u) =>
+        u.role === "employee" ||
+        u.role === "project_manager" ||
+        u.role === "financial_officer"
+    );
     return employees.map((employee) => {
       const account = data.accounts.find((a) => a.code === `EMP-${employee.id}`);
       return {
@@ -437,20 +595,103 @@ export default function AdminDashboard({ displayName }: { displayName: string })
 
   const projectAccounts = useMemo(
     () =>
-      data.projects.map((project) => {
-        const account = accountMap.get(project.account_id);
-        return {
-          ...project,
-          accountName: account?.name || "-",
-          accountBalance: accountBalance(account),
-        };
-      }),
-    [data.projects, accountMap, accountBalance]
+      data.projects
+        .filter((project) => !!project.account_id)
+        .map((project) => {
+          const account = accountMap.get(project.account_id);
+          const balance = accountBalance(account);
+
+          const hasPending =
+            pendingExpenses.some((e) => 
+              e.projectId === project.id || (e.lineItems && e.lineItems.some(li => li.projectId === project.id))
+            ) ||
+            pendingPayments.some((p) => p.project_id === project.id);
+
+          let calculatedFinanceStatus = "Payment Required";
+          if (hasPending) {
+            calculatedFinanceStatus = "Outdated";
+          } else if (Math.abs(balance) === 0) {
+            calculatedFinanceStatus = "Ready to Deliver";
+          }
+
+          return {
+            ...project,
+            accountName: account?.name || "-",
+            accountBalance: balance,
+            calculatedFinanceStatus,
+          };
+        }),
+    [data.projects, accountMap, accountBalance, pendingExpenses, pendingPayments]
+  );
+
+  useEffect(() => {
+    if (isReadOnly || data.projects.length === 0) return;
+    
+    // Find projects where finance_status differs from calculatedFinanceStatus
+    const updates = projectAccounts
+      .filter((p) => p.finance_status !== p.calculatedFinanceStatus)
+      .map((p) => ({
+        id: p.id,
+        finance_status: p.calculatedFinanceStatus,
+      }));
+
+    if (updates.length > 0) {
+      fetch("/api/projects/finance-status", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updates }),
+      })
+        .then((res) => {
+          if (res.ok) {
+            setData((prev) => ({
+              ...prev,
+              projects: prev.projects.map((p) => {
+                const update = updates.find((u) => u.id === p.id);
+                return update ? { ...p, finance_status: update.finance_status } : p;
+              }),
+            }));
+          }
+        })
+        .catch(console.error);
+    }
+  }, [projectAccounts, data.projects, isReadOnly]);
+
+  const pendingProjects = useMemo(
+    () =>
+      data.projects.filter(
+        (project) =>
+          !project.account_id &&
+          (project.status === "IN_PROGRESS" || project.status === "ON_HOLD")
+      ),
+    [data.projects]
   );
 
   const employeeUsers = useMemo(
     () => data.users.filter((user) => user.role === "employee"),
     [data.users]
+  );
+
+  const clientUsers = useMemo(
+    () => data.users.filter((user) => user.role === "client"),
+    [data.users]
+  );
+
+  const employeeUserOptions = useMemo(
+    () =>
+      employeeUsers.map((user) => ({
+        id: user.id,
+        label: `${user.full_name} (${user.email})`,
+      })),
+    [employeeUsers]
+  );
+
+  const clientUserOptions = useMemo(
+    () =>
+      clientUsers.map((user) => ({
+        id: user.id,
+        label: `${user.full_name} (${user.email})`,
+      })),
+    [clientUsers]
   );
 
   const closedAccounts = useMemo(
@@ -500,7 +741,7 @@ export default function AdminDashboard({ displayName }: { displayName: string })
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          full_name: userForm.fullName,
+          name: userForm.fullName,
           email: userForm.email,
           password: userForm.password,
           role,
@@ -532,7 +773,7 @@ export default function AdminDashboard({ displayName }: { displayName: string })
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          full_name: pmForm.fullName,
+          name: pmForm.fullName,
           email: pmForm.email,
           password: pmForm.password,
           petty_cash_account_id: pmForm.pettyCashAccountId
@@ -577,7 +818,8 @@ export default function AdminDashboard({ displayName }: { displayName: string })
           name: projectForm.name,
           budget: Number(projectForm.budget || 0),
           description: projectForm.description || null,
-          employee_ids: createProjectEmployeeIds,
+          user_ids: createProjectEmployeeIds,
+          client_ids: createProjectClientIds,
         }),
       });
 
@@ -589,10 +831,35 @@ export default function AdminDashboard({ displayName }: { displayName: string })
       setSuccess("Project created.");
       setProjectForm({ name: "", budget: "", description: "" });
       setCreateProjectEmployeeIds([]);
+      setCreateProjectClientIds([]);
       setShowCreateProject(false);
       await loadData();
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Failed to create project");
+    }
+  };
+
+  const createAccountForProject = async (projectId: string) => {
+    clearStatus();
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      if (!res.ok) {
+        const payload = (await res.json()) as { detail?: string };
+        throw new Error(payload.detail || "Failed to create project account");
+      }
+
+      setSuccess("Account automatically created and linked to project");
+      await loadData();
+    } catch (createError) {
+      setError(
+        createError instanceof Error ? createError.message : "Failed to create account"
+      );
     }
   };
 
@@ -612,6 +879,10 @@ export default function AdminDashboard({ displayName }: { displayName: string })
           includeCashFlow: accountForm.includeCashFlow,
           isPaymentAccepting: accountForm.isPaymentAccepting,
           isPettyCash: accountForm.isPettyCash,
+          accountNumber: accountForm.accountNumber || null,
+          accountHolderName: accountForm.accountHolderName || null,
+          bankName: accountForm.bankName || null,
+          bankBranch: accountForm.bankBranch || null,
         }),
       });
 
@@ -628,6 +899,10 @@ export default function AdminDashboard({ displayName }: { displayName: string })
         includeCashFlow: false,
         isPaymentAccepting: false,
         isPettyCash: false,
+        accountNumber: "",
+        accountHolderName: "",
+        bankName: "",
+        bankBranch: "",
       });
       setShowCreateAccount(false);
       await loadData();
@@ -642,17 +917,25 @@ export default function AdminDashboard({ displayName }: { displayName: string })
     setEditPmProjects(pm.managed_project_ids);
   };
 
-  const toggleProjectSelection = (projectId: number) => {
+  const toggleProjectSelection = (projectId: string) => {
     setEditPmProjects((prev) =>
       prev.includes(projectId) ? prev.filter((id) => id !== projectId) : [...prev, projectId]
     );
   };
 
-  const toggleCreateProjectEmployee = (employeeId: number) => {
+  const toggleCreateProjectEmployee = (employeeId: string) => {
     setCreateProjectEmployeeIds((prev) =>
       prev.includes(employeeId)
         ? prev.filter((id) => id !== employeeId)
         : [...prev, employeeId]
+    );
+  };
+
+  const toggleCreateProjectClient = (clientId: string) => {
+    setCreateProjectClientIds((prev) =>
+      prev.includes(clientId)
+        ? prev.filter((id) => id !== clientId)
+        : [...prev, clientId]
     );
   };
 
@@ -663,15 +946,25 @@ export default function AdminDashboard({ displayName }: { displayName: string })
       budget: String(Number(project.budget || 0)),
       description: project.description || "",
       employeeIds: project.employee_ids || [],
+      clientIds: project.client_ids || [],
     });
   };
 
-  const toggleEditProjectEmployee = (employeeId: number) => {
+  const toggleEditProjectEmployee = (employeeId: string) => {
     setEditProjectForm((prev) => ({
       ...prev,
       employeeIds: prev.employeeIds.includes(employeeId)
         ? prev.employeeIds.filter((id) => id !== employeeId)
         : [...prev.employeeIds, employeeId],
+    }));
+  };
+
+  const toggleEditProjectClient = (clientId: string) => {
+    setEditProjectForm((prev) => ({
+      ...prev,
+      clientIds: prev.clientIds.includes(clientId)
+        ? prev.clientIds.filter((id) => id !== clientId)
+        : [...prev.clientIds, clientId],
     }));
   };
 
@@ -688,7 +981,8 @@ export default function AdminDashboard({ displayName }: { displayName: string })
           name: editProjectForm.name,
           budget: Number(editProjectForm.budget || 0),
           description: editProjectForm.description || null,
-          employee_ids: editProjectForm.employeeIds,
+          user_ids: editProjectForm.employeeIds,
+          client_ids: editProjectForm.clientIds,
         }),
       });
 
@@ -802,7 +1096,7 @@ export default function AdminDashboard({ displayName }: { displayName: string })
   };
 
   const decideClientPayment = async (
-    paymentId: number,
+    paymentId: string,
     status: "approved" | "rejected"
   ) => {
     clearStatus();
@@ -833,12 +1127,16 @@ export default function AdminDashboard({ displayName }: { displayName: string })
     }
   };
 
+  const isAdmin = dashboardTitle === "Admin Dashboard";
+
   return (
     <div className={styles.page}>
       <header className={styles.headerCard}>
-        <h1 className={styles.pageTitle}>Admin Dashboard</h1>
+        <h1 className={styles.pageTitle}>{dashboardTitle}</h1>
         <p className={styles.pageSubtitle}>Welcome back, {displayName}</p>
       </header>
+
+      {topContent && topContent}
 
       {(error || success) && (
         <section className={styles.card}>
@@ -950,63 +1248,65 @@ export default function AdminDashboard({ displayName }: { displayName: string })
 
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Pending Expenses</h2>
-        <PendingExpensesTable expenses={pendingExpenseGroups} onUpdated={loadData} />
+        <PendingExpensesTable expenses={pendingExpenseGroups} readOnly={isReadOnly} onUpdated={loadData} />
       </section>
 
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Pending Client Payments</h2>
-        {pendingPayments.length === 0 ? (
-          <p className={styles.emptyState}>No PM-approved client payments pending admin decision</p>
-        ) : (
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Date</th>
-                  <th>Project</th>
-                  <th>Client</th>
-                  <th className={styles.numericCell}>Amount</th>
-                  <th>PM Notes</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pendingPayments.map((payment) => (
-                  <tr key={payment.id}>
-                    <td>{payment.id}</td>
-                    <td>{new Date(payment.payment_date).toLocaleDateString()}</td>
-                    <td>{payment.project_name}</td>
-                    <td>{payment.client_name || `Client #${payment.client_id}`}</td>
-                    <td className={styles.numericCell}>{formatCurrency(payment.amount)}</td>
-                    <td>{payment.pm_approval_notes || "-"}</td>
-                    <td>{payment.status}</td>
-                    <td>
-                      <div className={styles.pendingActions}>
-                        <button
-                          type="button"
-                          className={`${styles.actionButtonSm} ${styles.approveButton}`}
-                          onClick={() => decideClientPayment(payment.id, "approved")}
-                        >
-                          Approve
-                        </button>
-                        <button
-                          type="button"
-                          className={`${styles.actionButtonSm} ${styles.declineButton}`}
-                          onClick={() => decideClientPayment(payment.id, "rejected")}
-                        >
-                          Decline
-                        </button>
-                      </div>
-                    </td>
+          {pendingPayments.length === 0 ? (
+            <p className={styles.emptyState}>No pending or PM-approved client payments</p>
+          ) : (
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Date</th>
+                    <th>Project</th>
+                    <th>Client</th>
+                    <th className={styles.numericCell}>Amount</th>
+                    <th>PM Notes</th>
+                    <th>Status</th>
+                    {!isReadOnly && <th>Actions</th>}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                </thead>
+                <tbody>
+                  {pendingPayments.map((payment) => (
+                    <tr key={payment.id}>
+                      <td>{payment.id}</td>
+                      <td>{new Date(payment.payment_date).toLocaleDateString()}</td>
+                      <td>{payment.project_name}</td>
+                      <td>{payment.client_name || `Client #${payment.client_id}`}</td>
+                      <td className={styles.numericCell}>{formatCurrency(payment.amount)}</td>
+                      <td>{payment.pm_approval_notes || "-"}</td>
+                      <td>{String(payment.status).toLowerCase().replace(/_/g, ' ')}</td>
+                      {!isReadOnly && (
+                        <td>
+                          <div className={styles.pendingActions}>
+                            <button
+                              type="button"
+                              className={`${styles.actionButtonSm} ${styles.approveButton}`}
+                              onClick={() => decideClientPayment(payment.id, "approved")}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles.actionButtonSm} ${styles.declineButton}`}
+                              onClick={() => decideClientPayment(payment.id, "rejected")}
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Cash Flow</h2>
@@ -1133,17 +1433,25 @@ export default function AdminDashboard({ displayName }: { displayName: string })
 
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Project Accounts Table</h2>
+          <div style={{ marginBottom: "1rem" }}>
+            <button
+              className={styles.secondaryButton}
+              type="button"
+              onClick={() => setShowPendingProjects(true)}
+            >
+              Pending Projects ({pendingProjects.length})
+            </button>
+          </div>
         <div className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Client Username</th>
-                <th>Client Password</th>
                 <th>Budget</th>
                 <th>Account Name</th>
                 <th>Account ID</th>
                 <th>Balance</th>
+                <th>Finance Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -1151,8 +1459,6 @@ export default function AdminDashboard({ displayName }: { displayName: string })
               {projectAccounts.map((row) => (
                 <tr key={row.id}>
                   <td>{row.name}</td>
-                  <td>{row.client_username || "-"}</td>
-                  <td>{row.client_password || "-"}</td>
                   <td>{formatCurrency(Number(row.budget || 0))}</td>
                   <td>
                     <Link className={styles.accountLink} href={`/account/${row.account_id}`}>
@@ -1165,6 +1471,38 @@ export default function AdminDashboard({ displayName }: { displayName: string })
                     </Link>
                   </td>
                   <td>{formatCurrency(row.accountBalance)}</td>
+                  <td>
+                    {(() => {
+                      const status = row.calculatedFinanceStatus;
+                      let bg = "#fee2e2"; // Red background
+                      let fg = "#991b1b"; // Red text
+                      if (status === "Ready to Deliver") {
+                        bg = "#dcfce7"; // Green background
+                        fg = "#166534"; // Green text
+                      } else if (status === "Outdated") {
+                        bg = "#fef9c3"; // Yellow background
+                        fg = "#854d0e"; // Yellow text
+                      }
+                      return (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            textAlign: "center",
+                            padding: "0.2rem 0.55rem",
+                            borderRadius: "999px",
+                            backgroundColor: bg,
+                            color: fg,
+                            fontSize: "0.76rem",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {status}
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td>
                     <button
                       className={styles.secondaryButton}
@@ -1259,123 +1597,6 @@ export default function AdminDashboard({ displayName }: { displayName: string })
         )}
       </section>
 
-      <section className={styles.card}>
-        <h2 className={styles.sectionTitle}>Enter Transaction</h2>
-        <form className={styles.transactionForm} onSubmit={postTransaction}>
-          <label className={styles.label}>
-            Description
-            <input
-              className={styles.input}
-              value={txDescription}
-              onChange={(e) => setTxDescription(e.target.value)}
-              placeholder="Description"
-            />
-          </label>
-
-          <label className={styles.label}>
-            Value
-            <input
-              className={styles.input}
-              value={txValue}
-              onChange={(e) => setTxValue(e.target.value)}
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="0.00"
-            />
-          </label>
-
-          <label className={styles.label}>
-            Debit Account
-            <select
-              className={styles.input}
-              value={txDebitAccountId}
-              onChange={(e) => setTxDebitAccountId(e.target.value)}
-            >
-              <option value="">Select Debit Account</option>
-              {data.accounts.filter((a) => !a.isClosed).map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.code} - {account.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className={styles.label}>
-            Credit Account
-            <select
-              className={styles.input}
-              value={txCreditAccountId}
-              onChange={(e) => setTxCreditAccountId(e.target.value)}
-            >
-              <option value="">Select Credit Account</option>
-              {data.accounts.filter((a) => !a.isClosed).map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.code} - {account.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className={styles.label}>
-            Supporting Document
-            <input
-              type="file"
-              className={styles.input}
-              onChange={(e) => setTxSupportingDocument(e.target.files?.[0] || null)}
-            />
-          </label>
-
-          <div className={styles.actionsRow}>
-            <button type="button" className={styles.secondaryButton} onClick={clearTransactionForm}>
-              Clear
-            </button>
-            <button type="submit" className={styles.primaryButton}>
-              Post Transaction
-            </button>
-          </div>
-        </form>
-
-        <h3 className={styles.subTitle}>Account Type Behavior</h3>
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Account Type</th>
-                <th>Increased By</th>
-                <th>Decreased By</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Asset</td>
-                <td>Debit</td>
-                <td>Credit</td>
-              </tr>
-              <tr>
-                <td>Liability</td>
-                <td>Credit</td>
-                <td>Debit</td>
-              </tr>
-              <tr>
-                <td>Equity</td>
-                <td>Credit</td>
-                <td>Debit</td>
-              </tr>
-              <tr>
-                <td>Revenue</td>
-                <td>Credit</td>
-                <td>Debit</td>
-              </tr>
-              <tr>
-                <td>Expense</td>
-                <td>Debit</td>
-                <td>Credit</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
 
       {showCreateAdmin && (
         <div className={styles.modalOverlay}>
@@ -1554,19 +1775,23 @@ export default function AdminDashboard({ displayName }: { displayName: string })
                   onChange={(e) => setProjectForm((prev) => ({ ...prev, description: e.target.value }))}
                 />
               </div>
-              <h4 className={styles.subTitle}>Assign Employees</h4>
-              <div className={styles.selectionBox}>
-                {employeeUsers.map((employee) => (
-                  <label key={employee.id} className={styles.selectionItem}>
-                    <input
-                      type="checkbox"
-                      checked={createProjectEmployeeIds.includes(employee.id)}
-                      onChange={() => toggleCreateProjectEmployee(employee.id)}
-                    />
-                    {employee.full_name} ({employee.email})
-                  </label>
-                ))}
-              </div>
+              <SearchableMultiSelect
+                title="Assign Employees"
+                options={employeeUserOptions}
+                selectedIds={createProjectEmployeeIds}
+                onToggle={toggleCreateProjectEmployee}
+                placeholder="Type employee name to filter"
+                emptyText="No matching employees"
+              />
+
+              <SearchableMultiSelect
+                title="Assign Clients"
+                options={clientUserOptions}
+                selectedIds={createProjectClientIds}
+                onToggle={toggleCreateProjectClient}
+                placeholder="Type client name to filter"
+                emptyText="No matching clients"
+              />
               <div className={styles.actionsRowSimple}>
                 <button className={styles.primaryButton} type="submit">Create Project</button>
               </div>
@@ -1646,6 +1871,36 @@ export default function AdminDashboard({ displayName }: { displayName: string })
                   Petty cash
                 </label>
               </div>
+
+              {accountForm.isPaymentAccepting && (
+                <div className={styles.formRowGroup}>
+                  <input
+                    className={styles.input}
+                    placeholder="Account Holder Name"
+                    value={accountForm.accountHolderName}
+                    onChange={(e) => setAccountForm((prev) => ({ ...prev, accountHolderName: e.target.value }))}
+                  />
+                  <input
+                    className={styles.input}
+                    placeholder="Bank Name"
+                    value={accountForm.bankName}
+                    onChange={(e) => setAccountForm((prev) => ({ ...prev, bankName: e.target.value }))}
+                  />
+                  <input
+                    className={styles.input}
+                    placeholder="Account Number"
+                    value={accountForm.accountNumber}
+                    onChange={(e) => setAccountForm((prev) => ({ ...prev, accountNumber: e.target.value }))}
+                  />
+                  <input
+                    className={styles.input}
+                    placeholder="Branch"
+                    value={accountForm.bankBranch}
+                    onChange={(e) => setAccountForm((prev) => ({ ...prev, bankBranch: e.target.value }))}
+                  />
+                </div>
+              )}
+
               <div className={styles.actionsRowSimple}>
                 <button className={styles.primaryButton} type="submit">Create Custom Account</button>
               </div>
@@ -1728,19 +1983,23 @@ export default function AdminDashboard({ displayName }: { displayName: string })
                 />
               </div>
 
-              <h4 className={styles.subTitle}>Assigned Employees</h4>
-              <div className={styles.selectionBox}>
-                {employeeUsers.map((employee) => (
-                  <label key={employee.id} className={styles.selectionItem}>
-                    <input
-                      type="checkbox"
-                      checked={editProjectForm.employeeIds.includes(employee.id)}
-                      onChange={() => toggleEditProjectEmployee(employee.id)}
-                    />
-                    {employee.full_name} ({employee.email})
-                  </label>
-                ))}
-              </div>
+              <SearchableMultiSelect
+                title="Assigned Employees"
+                options={employeeUserOptions}
+                selectedIds={editProjectForm.employeeIds}
+                onToggle={toggleEditProjectEmployee}
+                placeholder="Type employee name to filter"
+                emptyText="No matching employees"
+              />
+
+              <SearchableMultiSelect
+                title="Assigned Clients"
+                options={clientUserOptions}
+                selectedIds={editProjectForm.clientIds}
+                onToggle={toggleEditProjectClient}
+                placeholder="Type client name to filter"
+                emptyText="No matching clients"
+              />
 
               <div className={styles.actionsRowSimple}>
                 <button className={styles.secondaryButton} type="button" onClick={() => setEditingProjectId(null)}>
@@ -1755,6 +2014,64 @@ export default function AdminDashboard({ displayName }: { displayName: string })
         </div>
       )}
 
+      {showPendingProjects && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modalPanelWide}>
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>Pending Projects (Missing Account)</h3>
+              <button
+                className={styles.secondaryButton}
+                type="button"
+                onClick={() => setShowPendingProjects(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className={styles.modalBody}>
+              {pendingProjects.length === 0 ? (
+                <p className={styles.emptyState}>No pending projects.</p>
+              ) : (
+                <div className={styles.tableWrap}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Budget</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingProjects.map((project) => (
+                        <tr key={project.id}>
+                          <td>{project.code}</td>
+                          <td>{project.name}</td>
+                          <td>{project.status || "-"}</td>
+                          <td>{formatCurrency(Number(project.budget || 0))}</td>
+                          <td>
+                            <button
+                              className={styles.primaryButton}
+                              type="button"
+                              onClick={() => createAccountForProject(project.id)}
+                              disabled={isAdmin}
+                              style={isAdmin ? { backgroundColor: "#d1d5db", color: "#6b7280", cursor: "not-allowed" } : undefined}
+                              title={isAdmin ? "Admins cannot create project accounts from here" : undefined}
+                            >
+                              Create Account
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {loading && (
         <section className={styles.card}>
           <p className={styles.helperText}>Loading dashboard data...</p>
@@ -1763,3 +2080,5 @@ export default function AdminDashboard({ displayName }: { displayName: string })
     </div>
   );
 }
+
+

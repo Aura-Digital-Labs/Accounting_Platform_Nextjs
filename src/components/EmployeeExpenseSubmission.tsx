@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import styles from "./EmployeeExpenseSubmission.module.css";
@@ -9,7 +9,7 @@ import styles from "./EmployeeExpenseSubmission.module.css";
 type UserRole = "employee" | "project_manager";
 
 type Project = {
-  id: number;
+  id: string;
   code: string;
   name: string;
 };
@@ -19,8 +19,8 @@ type CurrentUser = {
 };
 
 type PendingExpense = {
-  id: number;
-  project_id: number;
+  id: string;
+  project_id: string;
   project_name: string;
   employee_name: string;
   description: string;
@@ -32,7 +32,7 @@ type PendingExpense = {
 };
 
 type PendingPayment = {
-  id: number;
+  id: string;
   project_name: string;
   client_name: string;
   amount: number;
@@ -43,8 +43,8 @@ type PendingPayment = {
 type PMReviewStatus = "Pending" | "In Review";
 
 type PendingExpenseLine = {
-  id: number;
-  expenseId: number;
+  id: string;
+  expenseId: string;
   project: string;
   amountOriginal: number;
   amountFinal: number;
@@ -52,7 +52,7 @@ type PendingExpenseLine = {
 };
 
 type PendingExpenseGroup = {
-  id: number;
+  id: string;
   date: string;
   employer: string;
   description: string;
@@ -61,8 +61,8 @@ type PendingExpenseGroup = {
 };
 
 type ReviewTarget = {
-  groupId: number;
-  expenseId: number;
+  groupId: string;
+  expenseId: string;
   project: string;
   date: string;
   employer: string;
@@ -72,6 +72,35 @@ type ReviewTarget = {
   currentNotes: string | null;
 };
 
+const SUBMISSION_GROUP_PREFIX = "__submission_group__:";
+
+function makeSubmissionGroupId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID().replace(/-/g, "");
+  }
+  return `${Date.now()}${Math.random().toString(36).slice(2)}`;
+}
+
+function getSubmissionGroupId(notes: string | null) {
+  if (!notes) return null;
+  const trimmed = notes.trim();
+  if (!trimmed.startsWith(SUBMISSION_GROUP_PREFIX)) return null;
+
+  const candidate = trimmed.slice(SUBMISSION_GROUP_PREFIX.length).trim();
+  return candidate.length > 0 ? candidate : null;
+}
+
+function stripSubmissionGroupMarker(notes: string | null) {
+  if (!notes) return null;
+  const trimmed = notes.trim();
+  if (!trimmed.startsWith(SUBMISSION_GROUP_PREFIX)) {
+    return notes;
+  }
+
+  const withoutMarker = trimmed.slice(SUBMISSION_GROUP_PREFIX.length).trim();
+  return withoutMarker.length > 0 ? withoutMarker : null;
+}
+
 const expenseSchema = z.object({
   description: z.string().trim().min(1, "Description is required").max(500),
   expenseDate: z.string().min(1, "Expense date is required"),
@@ -79,7 +108,7 @@ const expenseSchema = z.object({
   lines: z
     .array(
       z.object({
-        projectId: z.coerce.number().int().positive("Project is required"),
+        projectId: z.string().min(1, "Project is required"),
         amount: z.coerce.number().positive("Amount must be greater than zero"),
       })
     )
@@ -101,7 +130,7 @@ async function parseApiError(res: Response) {
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency: "LKR",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount);
@@ -116,8 +145,11 @@ function formatDate(value: string) {
 }
 
 function statusClassName(status: string) {
-  if (status === "approved" || status === "approved_by_pm") {
+  if (status === "approved") {
     return styles.statusApproved;
+  }
+  if (status === "approved_by_pm") {
+    return styles.statusPending;
   }
   if (status === "rejected" || status === "rejected_by_pm") {
     return styles.statusRejected;
@@ -155,7 +187,6 @@ export default function EmployeeExpenseSubmission({ role }: { role: UserRole }) 
     register,
     control,
     handleSubmit,
-    watch,
     reset,
     formState: { errors },
   } = useForm<ExpenseFormInput, unknown, ExpenseFormOutput>({
@@ -173,11 +204,15 @@ export default function EmployeeExpenseSubmission({ role }: { role: UserRole }) 
     name: "lines",
   });
 
-  const watchedLines = watch("lines");
+  const watchedLines = useWatch({
+    control,
+    name: "lines",
+  }) || [];
+
   const totalAmount = useMemo(
     () =>
       watchedLines.reduce((sum, line) => {
-        const parsed = Number(line.amount);
+        const parsed = Number(line?.amount ?? 0);
         return sum + (Number.isFinite(parsed) && parsed > 0 ? parsed : 0);
       }, 0),
     [watchedLines]
@@ -197,8 +232,10 @@ export default function EmployeeExpenseSubmission({ role }: { role: UserRole }) 
     const groups = new Map<string, PendingExpenseGroup>();
 
     for (const expense of pendingExpenses) {
-      const key = `${expense.employee_name}|${expense.expense_date}|${expense.description}`;
+      const submissionGroupId = getSubmissionGroupId(expense.pm_approval_notes);
+      const key = submissionGroupId ? `submission-${submissionGroupId}` : `expense-${expense.id}`;
       const existing = groups.get(key);
+      const cleanedNotes = stripSubmissionGroupMarker(expense.pm_approval_notes);
 
       const line: PendingExpenseLine = {
         id: expense.id,
@@ -206,12 +243,12 @@ export default function EmployeeExpenseSubmission({ role }: { role: UserRole }) 
         project: expense.project_name,
         amountOriginal: Number(expense.amount),
         amountFinal: Number(expense.final_expense_amount ?? expense.amount),
-        notes: expense.pm_approval_notes,
+        notes: cleanedNotes,
       };
 
       if (!existing) {
         groups.set(key, {
-          id: expense.id,
+          id: submissionGroupId || expense.id,
           date: expense.expense_date,
           employer: expense.employee_name,
           description: expense.description,
@@ -242,20 +279,27 @@ export default function EmployeeExpenseSubmission({ role }: { role: UserRole }) 
         fetch("/api/client-payments/pm/pending", { cache: "no-store", credentials: "include" }),
       ]);
 
+      if (pendingExpenseRes.ok) {
+        const pendingExpensePayload = (await pendingExpenseRes.json()) as PendingExpense[];
+        setPendingExpenses(pendingExpensePayload);
+      } else {
+        setPendingExpenses([]);
+      }
+
+      if (pendingPaymentRes.ok) {
+        const pendingPaymentPayload = (await pendingPaymentRes.json()) as PendingPayment[];
+        setPendingPayments(pendingPaymentPayload);
+      } else {
+        setPendingPayments([]);
+      }
+
       if (!pendingExpenseRes.ok) {
         throw new Error(await parseApiError(pendingExpenseRes));
       }
+
       if (!pendingPaymentRes.ok) {
-        throw new Error(await parseApiError(pendingPaymentRes));
+        setFormError("Pending client payments are temporarily unavailable. Pending expenses are still shown.");
       }
-
-      const [pendingExpensePayload, pendingPaymentPayload] = (await Promise.all([
-        pendingExpenseRes.json(),
-        pendingPaymentRes.json(),
-      ])) as [PendingExpense[], PendingPayment[]];
-
-      setPendingExpenses(pendingExpensePayload);
-      setPendingPayments(pendingPaymentPayload);
     } catch (error: unknown) {
       setFormError(error instanceof Error ? error.message : "Failed to load pending items");
     } finally {
@@ -320,6 +364,8 @@ export default function EmployeeExpenseSubmission({ role }: { role: UserRole }) 
 
     setSubmitting(true);
     try {
+      const submissionGroupId = makeSubmissionGroupId();
+
       for (const line of values.lines) {
         const formData = new FormData();
         formData.append("project_id", String(line.projectId));
@@ -327,6 +373,7 @@ export default function EmployeeExpenseSubmission({ role }: { role: UserRole }) 
         formData.append("amount", Number(line.amount).toFixed(2));
         formData.append("expense_date", values.expenseDate);
         formData.append("payment_source", values.paymentSource);
+        formData.append("submission_group_id", submissionGroupId);
         if (supportingDocument) {
           formData.append("receipt_file", supportingDocument);
         }

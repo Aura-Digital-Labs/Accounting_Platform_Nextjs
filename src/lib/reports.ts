@@ -1,6 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 
+function normalizeEntryType(value: unknown): "debit" | "credit" | null {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized === "debit") return "debit";
+  if (normalized === "credit") return "credit";
+  return null;
+}
+
 // ─── Trial Balance ───────────────────────────────────────────────
 
 /**
@@ -8,35 +15,50 @@ import { Prisma } from "@prisma/client";
  * Port of services/reports.py::trial_balance
  */
 export async function trialBalance() {
-  const accounts = await prisma.account.findMany({
-    orderBy: { code: "asc" },
-    include: {
-      entries: {
-        select: {
-          entryType: true,
-          amount: true,
-        },
-      },
-    },
-  });
+  const rows = (await prisma.$queryRawUnsafe(`
+    SELECT
+      a.id AS account_id,
+      a.code,
+      a.name,
+      te.entry_type::text AS entry_type,
+      te.amount
+    FROM accounts a
+    LEFT JOIN transaction_entries te ON te.account_id = a.id
+    ORDER BY a.code ASC
+  `)) as Array<{
+    account_id: number;
+    code: string;
+    name: string;
+    entry_type: string | null;
+    amount: number | string | null;
+  }>;
 
-  return accounts.map((account) => {
-    const debits = account.entries
-      .filter((e) => e.entryType === "debit")
-      .reduce((sum, e) => sum + Number(e.amount), 0);
+  const map = new Map<number, { account_id: number; code: string; name: string; debits: number; credits: number }>();
 
-    const credits = account.entries
-      .filter((e) => e.entryType === "credit")
-      .reduce((sum, e) => sum + Number(e.amount), 0);
+  for (const row of rows) {
+    if (!map.has(row.account_id)) {
+      map.set(row.account_id, {
+        account_id: row.account_id,
+        code: row.code,
+        name: row.name,
+        debits: 0,
+        credits: 0,
+      });
+    }
 
-    return {
-      account_id: account.id,
-      code: account.code,
-      name: account.name,
-      debits: Number(debits.toFixed(2)),
-      credits: Number(credits.toFixed(2)),
-    };
-  });
+    const entryType = normalizeEntryType(row.entry_type);
+    const amount = Number(row.amount || 0);
+    const target = map.get(row.account_id)!;
+
+    if (entryType === "debit") target.debits += amount;
+    if (entryType === "credit") target.credits += amount;
+  }
+
+  return Array.from(map.values()).map((row) => ({
+    ...row,
+    debits: Number(row.debits.toFixed(2)),
+    credits: Number(row.credits.toFixed(2)),
+  }));
 }
 
 // ─── Account Ledger ──────────────────────────────────────────────
@@ -46,50 +68,72 @@ export async function trialBalance() {
  * Port of services/reports.py::account_ledger
  */
 export async function accountLedger(accountId: number) {
-  const entries = await prisma.transactionEntry.findMany({
-    where: { accountId },
-    orderBy: { id: "asc" },
-    include: {
-      transaction: true,
-      account: true,
-    },
-  });
+  const entries = (await prisma.$queryRawUnsafe(`
+    SELECT
+      te.id AS entry_id,
+      te.transaction_id,
+      t.posted_at,
+      t.description,
+      t.document_link,
+      te.entry_type::text AS entry_type,
+      te.amount,
+      te.is_checked,
+      a.code AS account_code,
+      a.name AS account_name
+    FROM transaction_entries te
+    JOIN transactions t ON t.id = te.transaction_id
+    JOIN accounts a ON a.id = te.account_id
+    WHERE te.account_id = ${accountId}
+    ORDER BY te.id ASC
+  `)) as Array<{
+    entry_id: number;
+    transaction_id: number;
+    posted_at: Date | string;
+    description: string;
+    document_link: string | null;
+    entry_type: string;
+    amount: number | string;
+    is_checked: boolean;
+    account_code: string;
+    account_name: string;
+  }>;
 
-  // Get all transaction IDs to find counterpart accounts
-  const txIds = entries.map((e) => e.transactionId);
+  const txIds = [...new Set(entries.map((e) => e.transaction_id))];
+  if (txIds.length === 0) {
+    return [];
+  }
 
-  // Fetch all entries for these transactions to find counterparts
-  const allTxEntries = await prisma.transactionEntry.findMany({
-    where: { transactionId: { in: txIds } },
-    include: {
-      account: {
-        select: { code: true, name: true },
-      },
-    },
-  });
+  const allTxEntries = (await prisma.$queryRawUnsafe(`
+    SELECT te.transaction_id, a.code, a.name, te.is_checked
+    FROM transaction_entries te
+    JOIN accounts a ON a.id = te.account_id
+    WHERE te.transaction_id IN (${txIds.join(",")})
+  `)) as Array<{ transaction_id: number; code: string; name: string; is_checked: boolean }>;
 
-  // Build counterpart map
   const grouped: Record<number, string[]> = {};
+  const hasCheckedMap: Record<number, boolean> = {};
   for (const te of allTxEntries) {
-    if (!grouped[te.transactionId]) grouped[te.transactionId] = [];
-    grouped[te.transactionId].push(`${te.account.code} - ${te.account.name}`);
+    if (!grouped[te.transaction_id]) grouped[te.transaction_id] = [];
+    grouped[te.transaction_id].push(`${te.code} - ${te.name}`);
+    if (te.is_checked) hasCheckedMap[te.transaction_id] = true;
   }
 
   return entries.map((entry) => {
-    const currentLabel = `${entry.account.code} - ${entry.account.name}`;
-    const allAccounts = grouped[entry.transactionId] || [];
+    const currentLabel = `${entry.account_code} - ${entry.account_name}`;
+    const allAccounts = grouped[entry.transaction_id] || [];
     const affected = allAccounts.filter((label) => label !== currentLabel);
 
     return {
-      entry_id: entry.id,
-      transaction_id: entry.transactionId,
-      date: entry.transaction.postedAt.toISOString(),
-      description: entry.transaction.description,
+      entry_id: entry.entry_id,
+      transaction_id: entry.transaction_id,
+      date: new Date(entry.posted_at).toISOString(),
+      description: entry.description,
       affected_account: affected.length > 0 ? affected.join(", ") : "-",
-      entry_type: entry.entryType,
+      entry_type: normalizeEntryType(entry.entry_type) || "debit",
       amount: Number(entry.amount),
-      is_checked: entry.isChecked,
-      document_link: entry.transaction.documentLink,
+      is_checked: entry.is_checked,
+      is_transaction_checked: hasCheckedMap[entry.transaction_id] || false,
+      document_link: entry.document_link,
     };
   });
 }
@@ -139,16 +183,26 @@ export async function projectSpendingVsBudget() {
  * Port of services/reports.py::cash_flow
  */
 export async function cashFlow(cashAccountIds: number[]) {
-  const entries = await prisma.transactionEntry.findMany({
-    where: { accountId: { in: cashAccountIds } },
-  });
+  if (cashAccountIds.length === 0) {
+    return {
+      cash_inflow: 0,
+      cash_outflow: 0,
+      net_cash_flow: 0,
+    };
+  }
+
+  const entries = (await prisma.$queryRawUnsafe(`
+    SELECT entry_type::text AS entry_type, amount
+    FROM transaction_entries
+    WHERE account_id IN (${cashAccountIds.join(",")})
+  `)) as Array<{ entry_type: string; amount: number | string }>;
 
   const inflow = entries
-    .filter((e) => e.entryType === "debit")
+    .filter((e) => normalizeEntryType(e.entry_type) === "debit")
     .reduce((sum, e) => sum + Number(e.amount), 0);
 
   const outflow = entries
-    .filter((e) => e.entryType === "credit")
+    .filter((e) => normalizeEntryType(e.entry_type) === "credit")
     .reduce((sum, e) => sum + Number(e.amount), 0);
 
   return {
