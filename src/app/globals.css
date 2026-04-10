@@ -22,16 +22,16 @@ body {
 }
 
 .app-shell {
-  display: flex;
-  flex-direction: column;
+  display: block;
   min-height: 100vh;
 }
 
 main {
-  flex: 1;
+  margin-left: 250px;
   padding: 2rem;
-  max-width: 1200px;
-  margin: 0 auto;
+  padding-top: calc(64px + 2rem); /* Space for the top nav bar */
+  max-width: calc(100vw - 250px);
+  margin-right: auto;
   width: 100%;
 }
 

@@ -1,10 +1,14 @@
 "use client";
 
-import Link from "next/link";
+import LoadingSpinner from '@/components/LoadingSpinner';
+import toast from 'react-hot-toast';
+import Link from 'next/link';
+
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./AdminDashboard.module.css";
 import PendingExpensesTable, { PendingExpenseGroup } from "./PendingExpensesTable";
 import BankStatementsDashboard from "./BankStatementsDashboard";
+import DashboardOverview from "./DashboardOverview";
 
 type UserRow = {
   id: string;
@@ -40,6 +44,8 @@ type AccountRow = {
   isPaymentAccepting: boolean;
   isPettyCash: boolean;
   isClosed: boolean;
+  bankName?: string | null;
+  accountNumber?: string | null;
 };
 
 type TrialBalanceRow = {
@@ -53,6 +59,8 @@ type TrialBalanceRow = {
 type HealthReport = {
   double_entry_balanced: boolean;
   accounting_equation_balanced: boolean;
+  unchecked_transactions: number;
+  unchecked_accounts_breakdown: { account_id: number; count: number }[];
 };
 
 type CashFlowReport = {
@@ -106,6 +114,19 @@ type ProjectManagerRow = {
   managed_project_ids: string[];
 };
 
+type FixedDepositRow = {
+  id: number;
+  bankName: string;
+  accountNumber: string;
+  amount: number;
+  expectedInterest: number;
+  startingDate: string;
+  periodType: string;
+  periodValue: number;
+  status: string;
+  referenceDocumentUrl: string | null;
+};
+
 type TransactionRow = {
   id: number;
   description: string;
@@ -128,6 +149,8 @@ type DashboardPayload = {
   cashFlow: CashFlowReport;
   trialBalance: TrialBalanceRow[];
   transactions: TransactionRow[];
+  bankStatements: any[];
+  fixedDeposits: FixedDepositRow[];
 };
 
 type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
@@ -142,6 +165,8 @@ const EMPTY_PAYLOAD: DashboardPayload = {
   health: {
     double_entry_balanced: true,
     accounting_equation_balanced: true,
+    unchecked_transactions: 0,
+    unchecked_accounts_breakdown: [],
   },
   cashFlow: {
     cash_inflow: 0,
@@ -150,6 +175,8 @@ const EMPTY_PAYLOAD: DashboardPayload = {
   },
   trialBalance: [],
   transactions: [],
+  bankStatements: [],
+  fixedDeposits: [],
 };
 
 function formatCurrency(amount: number) {
@@ -310,21 +337,21 @@ export default function AdminDashboard({
   displayName,
   dashboardTitle = "Admin Dashboard",
   isReadOnly = false,
-  topContent,
+  bottomContent,
+  viewMode = "all", // "all", "overview", "detailed", "employees", "projects", "custom-accounts", "bank"
 }: {
   displayName: string;
   dashboardTitle?: string;
   isReadOnly?: boolean;
-  topContent?: React.ReactNode;
+  bottomContent?: React.ReactNode;
+  viewMode?: "all" | "overview" | "detailed" | "employees" | "projects" | "custom-accounts" | "bank";
 }) {
   const [data, setData] = useState<DashboardPayload>(EMPTY_PAYLOAD);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const [showCreateAdmin, setShowCreateAdmin] = useState(false);
-  const [showCreateEmployee, setShowCreateEmployee] = useState(false);
-  const [showCreatePm, setShowCreatePm] = useState(false);
+  const [showCreateUser, setShowCreateUser] = useState(false);
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [showClosedAccounts, setShowClosedAccounts] = useState(false);
@@ -333,7 +360,24 @@ export default function AdminDashboard({
   const [creatingAccountForProjectId, setCreatingAccountForProjectId] = useState<string | null>(null);
   const [pendingAccountForm, setPendingAccountForm] = useState({ code: "", name: "" });
 
-  const [userForm, setUserForm] = useState({ fullName: "", email: "", password: "" });
+  const [projectSearchFilter, setProjectSearchFilter] = useState("");
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+
+  const [userForm, setUserForm] = useState<{
+    fullName: string;
+    email: string;
+    password: string;
+    role: "admin" | "financial_officer" | "employee" | "project_manager" | "client";
+    pettyCashAccountId: string;
+    selectedProjects: string[];
+  }>({
+    fullName: "",
+    email: "",
+    password: "",
+    role: "employee",
+    pettyCashAccountId: "",
+    selectedProjects: []
+  });
   const [pmForm, setPmForm] = useState({
     fullName: "",
     email: "",
@@ -395,6 +439,8 @@ export default function AdminDashboard({
         cashFlow,
         trialBalance,
         transactions,
+        bankStatements,
+        fdData,
       ] = await Promise.all([
         readJson<UserRow[]>("/api/users"),
         readJson<ProjectRow[]>("/api/projects"),
@@ -406,6 +452,8 @@ export default function AdminDashboard({
         readJson<CashFlowReport>("/api/reports/cash-flow"),
         readJson<TrialBalanceRow[]>("/api/reports/trial-balance"),
         readJson<TransactionRow[]>("/api/transactions"),
+        readJson<any[]>("/api/bank-statements/all"),
+        readJson<{ fixedDeposits: FixedDepositRow[] }>("/api/fixed-deposits"),
       ]);
 
       setData({
@@ -419,9 +467,11 @@ export default function AdminDashboard({
         cashFlow,
         trialBalance,
         transactions,
+        bankStatements,
+        fixedDeposits: fdData.fixedDeposits || [],
       });
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load dashboard data");
+      const errMsg = loadError instanceof Error ? loadError.message : "Failed to load dashboard data"; toast.error(errMsg); setError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -731,70 +781,91 @@ export default function AdminDashboard({
       .filter((row) => row.inflow > 0 || row.outflow > 0);
   }, [data.transactions, data.accounts]);
 
-  const createUser = async (e: FormEvent, role: "admin" | "employee") => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     clearStatus();
 
-    try {
-      const res = await fetch("/api/users", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: userForm.fullName,
-          email: userForm.email,
-          password: userForm.password,
-          role,
-        }),
-      });
-
-      if (!res.ok) {
-        const payload = (await res.json()) as { detail?: string };
-        throw new Error(payload.detail || "Failed to create user");
-      }
-
-      setSuccess(role === "admin" ? "Admin created." : "Employer created.");
-      setUserForm({ fullName: "", email: "", password: "" });
-      setShowCreateAdmin(false);
-      setShowCreateEmployee(false);
-      await loadData();
-    } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Failed to create user");
+    if (!userForm.fullName || !userForm.email || !userForm.password) {
+      toast.error("Please fill out all required fields."); setError("Please fill out all required fields.");
+      return;
     }
-  };
-
-  const createProjectManager = async (e: FormEvent) => {
-    e.preventDefault();
-    clearStatus();
+    
+    if (userForm.role === "project_manager" && !userForm.pettyCashAccountId) {
+      toast.error("Please select a petty cash account for the PM."); setError("Please select a petty cash account for the PM.");
+      return;
+    }
 
     try {
-      const res = await fetch("/api/users/project-managers", {
+      const endpoint = userForm.role === "project_manager" ? "/api/users/project-managers" : "/api/users";
+      
+      const payload: any = {
+        name: userForm.fullName,
+        email: userForm.email,
+        password: userForm.password,
+        role: userForm.role,
+      };
+      
+      if (userForm.role === "project_manager") {
+         payload.petty_cash_account_id = Number(userForm.pettyCashAccountId);
+      }
+
+      const res = await fetch(endpoint, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: pmForm.fullName,
-          email: pmForm.email,
-          password: pmForm.password,
-          petty_cash_account_id: pmForm.pettyCashAccountId
-            ? Number(pmForm.pettyCashAccountId)
-            : null,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
-        const payload = (await res.json()) as { detail?: string };
-        throw new Error(payload.detail || "Failed to create project manager");
+        const payloadData = (await res.json()) as { detail?: string };
+        throw new Error(payloadData.detail || "Failed to create user");
       }
 
-      setSuccess("Project manager created.");
-      setPmForm({ fullName: "", email: "", password: "", pettyCashAccountId: "" });
-      setShowCreatePm(false);
+      const createdUser = await res.json();
+      
+      // Handle PM projects
+      if (userForm.role === "project_manager" && userForm.selectedProjects.length > 0) {
+         await fetch(`/api/users/project-managers/${createdUser.id}/assignments`, {
+           method: "POST",
+           headers: { "Content-Type": "application/json" },
+           body: JSON.stringify({ project_ids: userForm.selectedProjects })
+         });
+      }
+      
+      // Handle Client / Employee projects 
+      if ((userForm.role === "employee" || userForm.role === "client") && userForm.selectedProjects.length > 0) {
+         for (const projectId of userForm.selectedProjects) {
+            const project = data.projects.find(p => p.id === projectId);
+            if (!project) continue;
+            
+            const patchPayload: any = {};
+            if (userForm.role === "employee") {
+               patchPayload.employee_ids = [...(project.employee_ids || []), createdUser.id];
+               patchPayload.client_ids = project.client_ids || [];
+            } else if (userForm.role === "client") {
+               patchPayload.client_ids = [...(project.client_ids || []), createdUser.id];
+               patchPayload.employee_ids = project.employee_ids || [];
+            }
+            
+            patchPayload.user_ids = Array.from(new Set([...(project.user_ids || []), createdUser.id]));
+            patchPayload.budget = Number(project.budget);
+            patchPayload.account_id = Number(project.account_id);
+            
+            await fetch(`/api/projects/${projectId}`, {
+              method: "PATCH",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(patchPayload)
+            });
+         }
+      }
+
+      toast.success("User created successfully."); setSuccess("User created successfully.");
+      setUserForm({ fullName: "", email: "", password: "", role: "employee", pettyCashAccountId: "", selectedProjects: [] });
+      setShowCreateUser(false);
       await loadData();
     } catch (createError) {
-      setError(
-        createError instanceof Error ? createError.message : "Failed to create project manager"
-      );
+      const errMsg = createError instanceof Error ? createError.message : "Failed to create user"; toast.error(errMsg); setError(errMsg);
     }
   };
 
@@ -828,14 +899,14 @@ export default function AdminDashboard({
         throw new Error(payload.detail || "Failed to create project");
       }
 
-      setSuccess("Project created.");
+      toast.success("Project created."); setSuccess("Project created.");
       setProjectForm({ name: "", budget: "", description: "" });
       setCreateProjectEmployeeIds([]);
       setCreateProjectClientIds([]);
       setShowCreateProject(false);
       await loadData();
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Failed to create project");
+      const errMsg = createError instanceof Error ? createError.message : "Failed to create project"; toast.error(errMsg); setError(errMsg);
     }
   };
 
@@ -854,7 +925,7 @@ export default function AdminDashboard({
         throw new Error(payload.detail || "Failed to create project account");
       }
 
-      setSuccess("Account automatically created and linked to project");
+      toast.success("Account automatically created and linked to project"); setSuccess("Account automatically created and linked to project");
       await loadData();
     } catch (createError) {
       setError(
@@ -891,7 +962,7 @@ export default function AdminDashboard({
         throw new Error(payload.detail || "Failed to create account");
       }
 
-      setSuccess("Custom account created.");
+      toast.success("Custom account created."); setSuccess("Custom account created.");
       setAccountForm({
         code: "",
         name: "",
@@ -907,7 +978,7 @@ export default function AdminDashboard({
       setShowCreateAccount(false);
       await loadData();
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Failed to create account");
+      const errMsg = createError instanceof Error ? createError.message : "Failed to create account"; toast.error(errMsg); setError(errMsg);
     }
   };
 
@@ -991,11 +1062,11 @@ export default function AdminDashboard({
         throw new Error(payload.detail || "Failed to update project");
       }
 
-      setSuccess("Project updated.");
+      toast.success("Project updated."); setSuccess("Project updated.");
       setEditingProjectId(null);
       await loadData();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Failed to update project");
+      const errMsg = saveError instanceof Error ? saveError.message : "Failed to update project"; toast.error(errMsg); setError(errMsg);
     }
   };
 
@@ -1033,13 +1104,13 @@ export default function AdminDashboard({
         throw new Error(payload.detail || "Failed to update PM assignments");
       }
 
-      setSuccess("Project manager updated.");
+      toast.success("Project manager updated."); setSuccess("Project manager updated.");
       setEditingPmId(null);
       setEditPmPettyCash("");
       setEditPmProjects([]);
       await loadData();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Failed to save PM changes");
+      const errMsg = saveError instanceof Error ? saveError.message : "Failed to save PM changes"; toast.error(errMsg); setError(errMsg);
     }
   };
 
@@ -1049,7 +1120,7 @@ export default function AdminDashboard({
     setTxDebitAccountId("");
     setTxCreditAccountId("");
     setTxSupportingDocument(null);
-    setSuccess("Transaction form cleared.");
+    toast.success("Transaction form cleared.");
     setError("");
   };
 
@@ -1058,7 +1129,9 @@ export default function AdminDashboard({
     clearStatus();
 
     if (!txDescription.trim() || !txValue || !txDebitAccountId || !txCreditAccountId) {
-      setError("Description, value, debit account, and credit account are required.");
+      const errMsg = "Description, value, debit account, and credit account are required.";
+      toast.error(errMsg);
+      setError(errMsg);
       return;
     }
 
@@ -1083,6 +1156,7 @@ export default function AdminDashboard({
         throw new Error(payload.detail || "Failed to post transaction");
       }
 
+      toast.success("Transaction posted.");
       setSuccess("Transaction posted.");
       setTxDescription("");
       setTxValue("");
@@ -1091,7 +1165,9 @@ export default function AdminDashboard({
       setTxSupportingDocument(null);
       await loadData();
     } catch (postError) {
-      setError(postError instanceof Error ? postError.message : "Failed to post transaction");
+      const errMsg = postError instanceof Error ? postError.message : "Failed to post transaction";
+      toast.error(errMsg);
+      setError(errMsg);
     }
   };
 
@@ -1129,6 +1205,153 @@ export default function AdminDashboard({
 
   const isAdmin = dashboardTitle === "Admin Dashboard";
 
+  const { totalBankBalance, hasOutdatedBankStatements, hasExpiredFDs, totalFDAmount } = useMemo(() => {
+    const paymentAccounts = data.accounts.filter(a => a.isPaymentAccepting && !a.isClosed);
+    let outdated = false;
+
+    const now = new Date();
+    const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+    for (const acc of paymentAccounts) {
+      const statementsForAcc = data.bankStatements.filter(s => s.accountId === acc.id);
+      const hasCurrent = statementsForAcc.some(s => s.month === currentYm);
+      if (!hasCurrent) {
+        outdated = true;
+        break;
+      }
+    }
+
+    const balance = data.accounts
+      .filter(a => a.type === "asset" && !a.isClosed)
+      .reduce((sum, a) => sum + accountBalance(a), 0);
+
+    let expiredFD = false;
+    let fdTotal = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    for (const fd of data.fixedDeposits || []) {
+      if (fd.status === "ACTIVE") {
+        fdTotal += Number(fd.amount);
+
+        const startDate = new Date(fd.startingDate);
+        const endDate = new Date(startDate.getTime());
+        
+        if (fd.periodType === "months") {
+          endDate.setMonth(endDate.getMonth() + fd.periodValue);
+        } else if (fd.periodType === "days") {
+          endDate.setDate(endDate.getDate() + fd.periodValue);
+        }
+        endDate.setHours(0, 0, 0, 0);
+
+        if (today > endDate) {
+          expiredFD = true;
+        }
+      }
+    }
+
+    return { 
+      totalBankBalance: balance, 
+      hasOutdatedBankStatements: outdated,
+      hasExpiredFDs: expiredFD,
+      totalFDAmount: fdTotal
+    };
+  }, [data.accounts, data.bankStatements, data.fixedDeposits, accountBalance]);
+
+  const mappedPendingExpenses = pendingExpenses.map(e => {
+    const user = data.users.find(u => u.id === e.employeeId);
+    return {
+      id: e.id,
+      date: e.expenseDate,
+      user: user?.full_name || user?.email || e.employeeId,
+      description: e.description,
+      amount: e.amount
+    };
+  });
+
+  const mappedPendingPayments = pendingPayments.map(p => ({
+    id: p.id,
+    date: p.payment_date,
+    client: p.client_name || p.client_id,
+    project: p.project_name || p.project_id,
+    amount: p.amount
+  }));
+
+  const isHealthStable = data.health.double_entry_balanced && data.health.accounting_equation_balanced;
+
+  const expensesTableNode = (
+    <PendingExpensesTable expenses={pendingExpenseGroups} readOnly={isReadOnly} onUpdated={loadData} />
+  );
+
+  const paymentsTableNode = (
+    <>
+      {pendingPayments.length === 0 ? (
+        <p className={styles.emptyState}>No pending or PM-approved client payments</p>
+      ) : (
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Date</th>
+                <th>Project</th>
+                <th>Client</th>
+                <th className={styles.numericCell}>Amount</th>
+                <th>PM Notes</th>
+                <th>Status</th>
+                {!isReadOnly && <th>Actions</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {pendingPayments.map((payment) => (
+                <tr key={payment.id}>
+                  <td>{payment.id}</td>
+                  <td>{new Date(payment.payment_date).toLocaleDateString()}</td>
+                  <td>{payment.project_name}</td>
+                  <td>{payment.client_name || `Client #${payment.client_id}`}</td>
+                  <td className={styles.numericCell}>{formatCurrency(payment.amount)}</td>
+                  <td>{payment.pm_approval_notes || "-"}</td>
+                  <td>{String(payment.status).toLowerCase().replace(/_/g, ' ')}</td>
+                  {!isReadOnly && (
+                    <td>
+                      <div className={styles.pendingActions}>
+                        <button
+                          type="button"
+                          className={`${styles.actionButtonSm} ${styles.approveButton}`}
+                          onClick={() => decideClientPayment(payment.id, "approved")}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          className={`${styles.actionButtonSm} ${styles.declineButton}`}
+                          onClick={() => decideClientPayment(payment.id, "rejected")}
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+
+  const showOverview = viewMode === "all" || viewMode === "overview";
+  const showAccountingMgmt = viewMode === "all" || viewMode === "detailed";
+  const showHealth = viewMode === "all" || viewMode === "detailed";
+  const showPending = viewMode === "all" || viewMode === "detailed";
+  const showCashFlow = viewMode === "all" || viewMode === "detailed";
+  const showCustomAccounts = viewMode === "all" || viewMode === "detailed" || viewMode === "custom-accounts";
+  const showEmployerAccounts = viewMode === "all" || viewMode === "detailed" || viewMode === "employees";
+  const showProjectAccounts = viewMode === "all" || viewMode === "detailed" || viewMode === "projects";
+  const showProjectManagers = viewMode === "all" || viewMode === "detailed" || viewMode === "projects";
+  const showBank = viewMode === "all" || viewMode === "detailed" || viewMode === "bank";
+
   return (
     <div className={styles.page}>
       <header className={styles.headerCard}>
@@ -1136,7 +1359,45 @@ export default function AdminDashboard({
         <p className={styles.pageSubtitle}>Welcome back, {displayName}</p>
       </header>
 
-      {topContent && topContent}
+      {showOverview && (
+        <>
+        <DashboardOverview
+          cashFlow={data.cashFlow.net_cash_flow}
+          bankBalance={totalBankBalance}
+          pendingExpenses={mappedPendingExpenses}
+          pendingPayments={mappedPendingPayments}
+          isHealthStable={isHealthStable}
+          hasOutdatedBankStatements={hasOutdatedBankStatements}
+          hasExpiredFDs={hasExpiredFDs}
+            uncheckedTransactionsCount={data.health.unchecked_transactions}
+            uncheckedAccountsBreakdown={data.health.unchecked_accounts_breakdown}
+            accounts={data.accounts.map(a => ({ id: a.id, name: a.name }))}
+          totalFDAmount={totalFDAmount}
+          totalProjectReceivables={projectAccounts.reduce((sum, p) => sum + p.accountBalance, 0)}
+          totalEmployeePayable={employerAccounts.reduce((sum, e) => sum + e.balance, 0)}
+          expensesTableNode={expensesTableNode}
+          paymentsTableNode={paymentsTableNode}
+          bankStatementsNode={<BankStatementsDashboard accounts={data.accounts} onUploaded={loadData} />}
+          onOpenCreateUser={() => {
+            setShowCreateUser(true);
+            setShowCreateProject(false);
+            setShowCreateAccount(false);
+          }}
+          onOpenCreateAccount={() => {
+            setShowCreateAccount(true);
+            setShowCreateUser(false);
+            setShowCreateUser(false);
+            setShowCreateUser(false);
+            setShowCreateProject(false);
+          }}
+          onOpenCreateProject={() => {
+            setShowCreateProject(true);
+            setShowCreateAccount(false);
+            setShowCreateUser(false);
+          }}
+        />
+        </>
+      )}
 
       {(error || success) && (
         <section className={styles.card}>
@@ -1145,56 +1406,29 @@ export default function AdminDashboard({
         </section>
       )}
 
-      <section className={styles.card}>
+      {showAccountingMgmt && (
+        <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Accounting Management</h2>
         <div className={styles.buttonGrid}>
           <button
             className={styles.primaryButton}
             type="button"
             onClick={() => {
-              setShowCreateAdmin(true);
-              setShowCreateEmployee(false);
-              setShowCreatePm(false);
+              setShowCreateUser(true);
               setShowCreateProject(false);
               setShowCreateAccount(false);
             }}
           >
-            Create Admin
-          </button>
-          <button
-            className={styles.primaryButton}
-            type="button"
-            onClick={() => {
-              setShowCreateEmployee(true);
-              setShowCreateAdmin(false);
-              setShowCreatePm(false);
-              setShowCreateProject(false);
-              setShowCreateAccount(false);
-            }}
-          >
-            Create Employer
-          </button>
-          <button
-            className={styles.primaryButton}
-            type="button"
-            onClick={() => {
-              setShowCreatePm(true);
-              setShowCreateAdmin(false);
-              setShowCreateEmployee(false);
-              setShowCreateProject(false);
-              setShowCreateAccount(false);
-            }}
-          >
-            Create Project Manager
+            Create User
           </button>
           <button
             className={styles.primaryButton}
             type="button"
             onClick={() => {
               setShowCreateProject(true);
-              setShowCreateAdmin(false);
-              setShowCreateEmployee(false);
-              setShowCreatePm(false);
+              setShowCreateUser(false);
+              setShowCreateUser(false);
+              setShowCreateUser(false);
               setShowCreateAccount(false);
             }}
           >
@@ -1205,9 +1439,9 @@ export default function AdminDashboard({
             type="button"
             onClick={() => {
               setShowCreateAccount(true);
-              setShowCreateAdmin(false);
-              setShowCreateEmployee(false);
-              setShowCreatePm(false);
+              setShowCreateUser(false);
+              setShowCreateUser(false);
+              setShowCreateUser(false);
               setShowCreateProject(false);
             }}
           >
@@ -1219,8 +1453,11 @@ export default function AdminDashboard({
         </div>
 
       </section>
+      )}
 
+      {(showHealth || showBank) && (
       <section className={styles.twoColumnGrid}>
+        {showHealth && (
         <article className={styles.card}>
           <h2 className={styles.sectionTitle}>Health Check</h2>
           <div className={styles.healthRows}>
@@ -1242,72 +1479,27 @@ export default function AdminDashboard({
             </div>
           </div>
         </article>
+        )}
 
-        <BankStatementsDashboard accounts={data.accounts} onUploaded={loadData} />
+        {showBank && <BankStatementsDashboard accounts={data.accounts} onUploaded={loadData} />}
       </section>
+      )}
 
+      {showPending && (
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Pending Expenses</h2>
-        <PendingExpensesTable expenses={pendingExpenseGroups} readOnly={isReadOnly} onUpdated={loadData} />
+        {expensesTableNode}
       </section>
+      )}
 
+      {showPending && (
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Pending Client Payments</h2>
-          {pendingPayments.length === 0 ? (
-            <p className={styles.emptyState}>No pending or PM-approved client payments</p>
-          ) : (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Date</th>
-                    <th>Project</th>
-                    <th>Client</th>
-                    <th className={styles.numericCell}>Amount</th>
-                    <th>PM Notes</th>
-                    <th>Status</th>
-                    {!isReadOnly && <th>Actions</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingPayments.map((payment) => (
-                    <tr key={payment.id}>
-                      <td>{payment.id}</td>
-                      <td>{new Date(payment.payment_date).toLocaleDateString()}</td>
-                      <td>{payment.project_name}</td>
-                      <td>{payment.client_name || `Client #${payment.client_id}`}</td>
-                      <td className={styles.numericCell}>{formatCurrency(payment.amount)}</td>
-                      <td>{payment.pm_approval_notes || "-"}</td>
-                      <td>{String(payment.status).toLowerCase().replace(/_/g, ' ')}</td>
-                      {!isReadOnly && (
-                        <td>
-                          <div className={styles.pendingActions}>
-                            <button
-                              type="button"
-                              className={`${styles.actionButtonSm} ${styles.approveButton}`}
-                              onClick={() => decideClientPayment(payment.id, "approved")}
-                            >
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              className={`${styles.actionButtonSm} ${styles.declineButton}`}
-                              onClick={() => decideClientPayment(payment.id, "rejected")}
-                            >
-                              Decline
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+        {paymentsTableNode}
+      </section>
+      )}
 
+      {showCashFlow && (
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Cash Flow</h2>
         <div className={styles.metricGrid}>
@@ -1352,7 +1544,9 @@ export default function AdminDashboard({
           </div>
         )}
       </section>
+      )}
 
+      {showCustomAccounts && (
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Custom Accounts Table</h2>
         <div className={styles.tableWrap}>
@@ -1392,7 +1586,9 @@ export default function AdminDashboard({
           </table>
         </div>
       </section>
+      )}
 
+      {showEmployerAccounts && (
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Employer Accounts Table</h2>
         <div className={styles.tableWrap}>
@@ -1430,7 +1626,9 @@ export default function AdminDashboard({
           </table>
         </div>
       </section>
+      )}
 
+      {showProjectAccounts && (
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Project Accounts Table</h2>
           <div style={{ marginBottom: "1rem" }}>
@@ -1518,7 +1716,9 @@ export default function AdminDashboard({
           </table>
         </div>
       </section>
+      )}
 
+      {showProjectManagers && (
       <section className={styles.card}>
         <h2 className={styles.sectionTitle}>Project Managers Table</h2>
         <div className={styles.tableWrap}>
@@ -1596,145 +1796,167 @@ export default function AdminDashboard({
           </div>
         )}
       </section>
-
-
-      {showCreateAdmin && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modalPanel}>
-            <div className={styles.modalHeader}>
-              <h3 className={styles.modalTitle}>Create Admin</h3>
-              <button className={styles.secondaryButton} type="button" onClick={() => setShowCreateAdmin(false)}>
-                Close
-              </button>
-            </div>
-            <form className={styles.modalBody} onSubmit={(e) => createUser(e, "admin")}>
-              <div className={styles.inlineGrid}>
-                <input
-                  className={styles.input}
-                  placeholder="Name"
-                  value={userForm.fullName}
-                  onChange={(e) => setUserForm((prev) => ({ ...prev, fullName: e.target.value }))}
-                  required
-                />
-                <input
-                  className={styles.input}
-                  type="email"
-                  placeholder="Email"
-                  value={userForm.email}
-                  onChange={(e) => setUserForm((prev) => ({ ...prev, email: e.target.value }))}
-                  required
-                />
-                <input
-                  className={styles.input}
-                  type="password"
-                  placeholder="Password"
-                  value={userForm.password}
-                  onChange={(e) => setUserForm((prev) => ({ ...prev, password: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className={styles.actionsRowSimple}>
-                <button className={styles.primaryButton} type="submit">Create Admin</button>
-              </div>
-            </form>
-          </div>
-        </div>
       )}
 
-      {showCreateEmployee && (
+      {showCreateUser && (
         <div className={styles.modalOverlay}>
           <div className={styles.modalPanel}>
             <div className={styles.modalHeader}>
-              <h3 className={styles.modalTitle}>Create Employer</h3>
-              <button className={styles.secondaryButton} type="button" onClick={() => setShowCreateEmployee(false)}>
+              <h3 className={styles.modalTitle}>Create User</h3>
+              <button className={styles.secondaryButton} type="button" onClick={() => setShowCreateUser(false)}>
                 Close
               </button>
             </div>
-            <form className={styles.modalBody} onSubmit={(e) => createUser(e, "employee")}>
-              <div className={styles.inlineGrid}>
-                <input
-                  className={styles.input}
-                  placeholder="Name"
-                  value={userForm.fullName}
-                  onChange={(e) => setUserForm((prev) => ({ ...prev, fullName: e.target.value }))}
-                  required
-                />
-                <input
-                  className={styles.input}
-                  type="email"
-                  placeholder="Email"
-                  value={userForm.email}
-                  onChange={(e) => setUserForm((prev) => ({ ...prev, email: e.target.value }))}
-                  required
-                />
-                <input
-                  className={styles.input}
-                  type="password"
-                  placeholder="Password"
-                  value={userForm.password}
-                  onChange={(e) => setUserForm((prev) => ({ ...prev, password: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className={styles.actionsRowSimple}>
-                <button className={styles.primaryButton} type="submit">Create Employer</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {showCreatePm && (
-        <div className={styles.modalOverlay}>
-          <div className={styles.modalPanel}>
-            <div className={styles.modalHeader}>
-              <h3 className={styles.modalTitle}>Create Project Manager</h3>
-              <button className={styles.secondaryButton} type="button" onClick={() => setShowCreatePm(false)}>
-                Close
-              </button>
-            </div>
-            <form className={styles.modalBody} onSubmit={createProjectManager}>
-              <div className={styles.inlineGrid}>
-                <input
-                  className={styles.input}
-                  placeholder="Name"
-                  value={pmForm.fullName}
-                  onChange={(e) => setPmForm((prev) => ({ ...prev, fullName: e.target.value }))}
-                  required
-                />
-                <input
-                  className={styles.input}
-                  type="email"
-                  placeholder="Email"
-                  value={pmForm.email}
-                  onChange={(e) => setPmForm((prev) => ({ ...prev, email: e.target.value }))}
-                  required
-                />
-                <input
-                  className={styles.input}
-                  type="password"
-                  placeholder="Password"
-                  value={pmForm.password}
-                  onChange={(e) => setPmForm((prev) => ({ ...prev, password: e.target.value }))}
-                  required
-                />
-                <select
-                  className={styles.input}
-                  value={pmForm.pettyCashAccountId}
-                  onChange={(e) =>
-                    setPmForm((prev) => ({ ...prev, pettyCashAccountId: e.target.value }))
-                  }
-                >
-                  <option value="">No petty cash account</option>
-                  {pettyCashAccounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.code} - {account.name}
-                    </option>
-                  ))}
-                </select>
+            <form onSubmit={handleCreateUser} className={styles.modalBody}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <label style={{ fontWeight: 600 }}>Role</label>
+                  <select
+                    className={styles.input}
+                    value={userForm.role}
+                    onChange={(e) => setUserForm({ ...userForm, role: e.target.value as any, selectedProjects: [] })}
+                  >
+                    <option value="employee">Employee</option>
+                    <option value="project_manager">Project Manager</option>
+                    <option value="client">Client</option>
+                    <option value="admin">Admin</option>
+                    <option value="financial_officer">Financial Officer</option>
+                  </select>
+                </div>
+                
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <label style={{ fontWeight: 600 }}>Full Name</label>
+                  <input
+                    className={styles.input}
+                    placeholder="Name"
+                    value={userForm.fullName}
+                    onChange={(e) => setUserForm({ ...userForm, fullName: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <label style={{ fontWeight: 600 }}>Email</label>
+                  <input
+                    className={styles.input}
+                    type="email"
+                    placeholder="Email"
+                    value={userForm.email}
+                    onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <label style={{ fontWeight: 600 }}>Password</label>
+                  <input
+                    className={styles.input}
+                    type="password"
+                    placeholder="Password"
+                    value={userForm.password}
+                    onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                    required
+                  />
+                </div>
+
+                {userForm.role === "project_manager" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <label style={{ fontWeight: 600 }}>Petty Cash Account</label>
+                    <select
+                      className={styles.input}
+                      value={userForm.pettyCashAccountId}
+                      onChange={(e) => setUserForm({ ...userForm, pettyCashAccountId: e.target.value })}
+                      required
+                    >
+                      <option value="">Select Petty Cash Account</option>
+                      {pettyCashAccounts.map(a => (
+                        <option key={a.id} value={a.id}>{a.name} ({a.code})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {(userForm.role === "project_manager" || userForm.role === "client" || userForm.role === "employee") && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <label style={{ fontWeight: 600 }}>Assign Projects</label>
+                    
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                      {userForm.selectedProjects.map((projId) => {
+                        const pInfo = data.projects.find(p => p.id === projId);
+                        return pInfo ? (
+                          <div
+                            key={projId}
+                            style={{
+                              backgroundColor: "#e0e7ff",
+                              color: "#000",
+                              padding: "4px 8px",
+                              borderRadius: "16px",
+                              fontSize: "0.85rem",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              cursor: "pointer"
+                            }}
+                            onClick={() => setUserForm(prev => ({
+                              ...prev,
+                              selectedProjects: prev.selectedProjects.filter(id => id !== projId)
+                            }))}
+                            title="Click to remove"
+                          >
+                            {pInfo.code} - {pInfo.name} &times;
+                          </div>
+                        ) : null;
+                      })}
+                    </div>
+                    
+                    <input
+                      className={styles.input}
+                      placeholder="Search to add a project..."
+                      value={projectSearchFilter}
+                      onFocus={() => setShowProjectDropdown(true)}
+                      onBlur={() => setTimeout(() => setShowProjectDropdown(false), 200)}
+                      onChange={(e) => {
+                        setProjectSearchFilter(e.target.value);
+                        setShowProjectDropdown(true);
+                      }}
+                    />
+                    
+                    {showProjectDropdown && (
+                      <div style={{ maxHeight: "150px", overflowY: "auto", border: "1px solid #ccc", borderRadius: "4px" }}>
+                        {data.projects
+                           .filter(p => !userForm.selectedProjects.includes(p.id))
+                           .filter(p => (p.name + p.code).toLowerCase().includes(projectSearchFilter.toLowerCase()))
+                           .map(p => (
+                             <div 
+                               key={p.id}
+                               style={{ padding: "8px", cursor: "pointer", borderBottom: "1px solid #f0f0f0", transition: "background-color 0.2s" }}
+                               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f9f9f9")}
+                               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                               onClick={() => {
+                                 setUserForm(prev => ({ ...prev, selectedProjects: [...prev.selectedProjects, p.id] }));
+                                 setProjectSearchFilter("");
+                               }}
+                             >
+                               {p.code} - {p.name}
+                             </div>
+                           ))
+                        }
+                        
+                        {data.projects
+                           .filter(p => !userForm.selectedProjects.includes(p.id))
+                           .filter(p => (p.name + p.code).toLowerCase().includes(projectSearchFilter.toLowerCase()))
+                           .length === 0 && (
+                             <div style={{ padding: "8px", color: "#666" }}>No unused projects match your search.</div>
+                           )
+                        }
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className={styles.actionsRowSimple}>
-                <button className={styles.primaryButton} type="submit">Create Project Manager</button>
+              <div style={{ marginTop: "16px" }} className={styles.actionsRowSimple}>
+                <button className={styles.primaryButton} type="submit">Create User</button>
               </div>
             </form>
           </div>
@@ -1810,34 +2032,43 @@ export default function AdminDashboard({
               </button>
             </div>
             <form className={styles.modalBody} onSubmit={createCustomAccount}>
-              <div className={styles.inlineGrid}>
-                <input
-                  className={styles.input}
-                  placeholder="Code"
-                  value={accountForm.code}
-                  onChange={(e) => setAccountForm((prev) => ({ ...prev, code: e.target.value }))}
-                  required
-                />
-                <input
-                  className={styles.input}
-                  placeholder="Name"
-                  value={accountForm.name}
-                  onChange={(e) => setAccountForm((prev) => ({ ...prev, name: e.target.value }))}
-                  required
-                />
-                <select
-                  className={styles.input}
-                  value={accountForm.type}
-                  onChange={(e) =>
-                    setAccountForm((prev) => ({ ...prev, type: e.target.value as AccountType }))
-                  }
-                >
-                  <option value="asset">Asset</option>
-                  <option value="liability">Liability</option>
-                  <option value="equity">Equity</option>
-                  <option value="revenue">Revenue</option>
-                  <option value="expense">Expense</option>
-                </select>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%", maxWidth: "400px", margin: "0 auto" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <label style={{ fontSize: "0.875rem", fontWeight: "500", color: "#374151" }}>Account Code</label>
+                  <input
+                    className={styles.input}
+                    placeholder="e.g. 1000"
+                    value={accountForm.code}
+                    onChange={(e) => setAccountForm((prev) => ({ ...prev, code: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <label style={{ fontSize: "0.875rem", fontWeight: "500", color: "#374151" }}>Account Name</label>
+                  <input
+                    className={styles.input}
+                    placeholder="e.g. Petty Cash"
+                    value={accountForm.name}
+                    onChange={(e) => setAccountForm((prev) => ({ ...prev, name: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <label style={{ fontSize: "0.875rem", fontWeight: "500", color: "#374151" }}>Account Type</label>
+                  <select
+                    className={styles.input}
+                    value={accountForm.type}
+                    onChange={(e) =>
+                      setAccountForm((prev) => ({ ...prev, type: e.target.value as AccountType }))
+                    }
+                  >
+                    <option value="asset">Asset</option>
+                    <option value="liability">Liability</option>
+                    <option value="equity">Equity</option>
+                    <option value="revenue">Revenue</option>
+                    <option value="expense">Expense</option>
+                  </select>
+                </div>
               </div>
               <div className={styles.checkboxRow}>
                 <label>
@@ -2073,8 +2304,133 @@ export default function AdminDashboard({
       )}
 
       {loading && (
+        <LoadingSpinner fullScreen />
+      )}
+
+      {showBank && (
         <section className={styles.card}>
-          <p className={styles.helperText}>Loading dashboard data...</p>
+          <h2 className={styles.sectionTitle}>Bank Accounts</h2>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Name</th>
+                  <th>Account Type</th>
+                  <th>Category</th>
+                  <th>Bank Name</th>
+                  <th>Account Number</th>
+                  <th>Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {customAccounts.filter(a => a.isPaymentAccepting || a.isPettyCash).map((account) => (
+                  <tr key={account.id}>
+                    <td>
+                      <Link className={styles.accountLink} href={`/account/${account.id}`}>
+                        {account.code}
+                      </Link>
+                    </td>
+                    <td>
+                      <Link className={styles.accountLink} href={`/account/${account.id}`}>
+                        {account.name}
+                      </Link>
+                    </td>
+                    <td>{account.type}</td>
+                    <td>
+                      {account.isPettyCash ? "Petty Cash" : "Payment Accepting"}
+                    </td>
+                    <td>{account.bankName || "-"}</td>
+                    <td>{account.accountNumber || "-"}</td>
+                    <td>{formatCurrency(accountBalance(account))}</td>
+                  </tr>
+                ))}
+                {customAccounts.filter(a => a.isPaymentAccepting || a.isPettyCash).length === 0 && (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: "center", padding: "1rem" }}>
+                      No bank or petty cash accounts found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {bottomContent && bottomContent}
+
+      {(!isAdmin && showOverview) && (
+        <section className={styles.card} style={{ marginTop: "24px" }}>
+          <h2 className={styles.sectionTitle}>Add Transaction / Journal Entry</h2>
+          <form
+            onSubmit={postTransaction}
+            style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
+          >
+            <input
+              className={styles.input}
+              placeholder="Description"
+              value={txDescription}
+              onChange={(e) => setTxDescription(e.target.value)}
+              required
+            />
+            <input
+              className={styles.input}
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Amount"
+              value={txValue}
+              onChange={(e) => setTxValue(e.target.value)}
+              required
+            />
+            <select
+              className={styles.input}
+              value={txDebitAccountId}
+              onChange={(e) => setTxDebitAccountId(e.target.value)}
+              required
+            >
+              <option value="">Select Debit Account</option>
+              {data.accounts.map((a) => (
+                <option key={a.id} value={String(a.id)}>
+                  {a.code} - {a.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className={styles.input}
+              value={txCreditAccountId}
+              onChange={(e) => setTxCreditAccountId(e.target.value)}
+              required
+            >
+              <option value="">Select Credit Account</option>
+              {data.accounts.map((a) => (
+                <option key={a.id} value={String(a.id)}>
+                  {a.code} - {a.name}
+                </option>
+              ))}
+            </select>
+            <input
+              className={styles.input}
+              title="Supporting Document (Optional)"
+              type="file"
+              onChange={(e) => {
+                if (e.target.files?.[0]) {
+                  setTxSupportingDocument(e.target.files[0]);
+                } else {
+                  setTxSupportingDocument(null);
+                }
+              }}
+            />
+            <div className={styles.actionsRowSimple} style={{ alignSelf: "flex-end" }}>
+              <button type="button" className={styles.secondaryButton} onClick={clearTransactionForm}>
+                Clear
+              </button>
+              <button type="submit" className={styles.primaryButton}>
+                Post Transaction
+              </button>
+            </div>
+          </form>
         </section>
       )}
     </div>

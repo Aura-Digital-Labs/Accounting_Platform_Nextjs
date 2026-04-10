@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import LoadingSpinner from '@/components/LoadingSpinner';
+import toast from 'react-hot-toast';
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -444,7 +446,7 @@ export default function EmployeeExpenseSubmission({ role }: { role: UserRole }) 
         throw new Error(await parseApiError(res));
       }
 
-      setSuccessMessage(`Review updated for expense #${reviewTarget.expenseId}.`);
+      toast.success(`Review updated for expense #${reviewTarget.expenseId}.`); setSuccessMessage(`Review updated for expense #${reviewTarget.expenseId}.`);
       setReviewTarget(null);
       await loadPendingData();
     } catch (error: unknown) {
@@ -712,7 +714,7 @@ export default function EmployeeExpenseSubmission({ role }: { role: UserRole }) 
             <p className={styles.pendingSubtitle}>Items waiting for project manager actions.</p>
 
             {loadingPending ? (
-              <p className={styles.pendingLoading}>Loading pending expenses...</p>
+              <LoadingSpinner />
             ) : groupedPendingExpenses.length === 0 ? (
               <p className={styles.emptyState}>No pending expenses</p>
             ) : (
@@ -827,7 +829,7 @@ export default function EmployeeExpenseSubmission({ role }: { role: UserRole }) 
             <p className={styles.pendingSubtitle}>Client payments requiring manager review.</p>
 
             {loadingPending ? (
-              <p className={styles.pendingLoading}>Loading pending payments...</p>
+              <LoadingSpinner />
             ) : pendingPayments.length === 0 ? (
               <p className={styles.emptyState}>No pending payments</p>
             ) : (

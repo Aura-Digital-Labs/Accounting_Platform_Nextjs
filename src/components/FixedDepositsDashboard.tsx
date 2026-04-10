@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import LoadingSpinner from "@/components/LoadingSpinner";
 import styles from "./AdminDashboard.module.css";
 
 type AccountRow = {
@@ -19,6 +20,7 @@ type FixedDepositRow = {
   periodValue: number;
   status: string;
   referenceDocumentUrl: string | null;
+  initialInvestmentAccountId?: number;
   initialInvestmentAccount: { name: string };
 };
 
@@ -225,7 +227,7 @@ export default function FixedDepositsDashboard() {
     }
   };
 
-  if (loading) return <div>Loading Fixed Deposits...</div>;
+  if (loading) return <LoadingSpinner />;
 
   return (
     <section className={styles.card}>

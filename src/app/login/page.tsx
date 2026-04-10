@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState } from "react";import toast from 'react-hot-toast';
+
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import styles from "./login.module.css";
@@ -37,13 +38,13 @@ export default function LoginPage() {
       });
 
       if (res?.error) {
-        setError("Invalid credentials. Please try again.");
+        toast.error("Invalid credentials. Please try again."); setError("Invalid credentials. Please try again.");
       } else if (res?.ok) {
         router.push("/");
         router.refresh(); // Refresh layout to show NavBar correctly
       }
     } catch (err) {
-      setError("An unexpected error occurred.");
+      toast.error("An unexpected error occurred."); setError("An unexpected error occurred.");
     } finally {
       setIsLoading(false);
     }

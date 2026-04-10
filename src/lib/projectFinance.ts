@@ -14,10 +14,7 @@ export async function syncProjectFinanceStatus(projectId: string) {
   const pendingExpenses = await prisma.expense.findFirst({
     where: {
       status: { in: ['pending', 'approved_by_pm'] },
-      OR: [
-        { projectId: projectId },
-        { lineItems: { some: { projectId: projectId } } }
-      ]
+      projectId: projectId
     }
   });
 

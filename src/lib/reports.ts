@@ -223,6 +223,21 @@ export async function healthCheck() {
 
   const accounts = await prisma.account.findMany();
 
+  const unchecked_transactions = await prisma.transactionEntry.count({
+    where: { isChecked: false }
+  });
+
+  const unchecked_entries = await prisma.transactionEntry.groupBy({
+    by: ['accountId'],
+    where: { isChecked: false },
+    _count: { _all: true }
+  });
+
+  const unchecked_accounts_breakdown = unchecked_entries.map(e => ({
+    account_id: e.accountId,
+    count: e._count._all
+  }));
+
   const totals = {
     assets: 0,
     liabilities: 0,
@@ -274,6 +289,8 @@ export async function healthCheck() {
     updated_equity: Number(updatedEquity.toFixed(2)),
     total_debits: Number(totalDebits.toFixed(2)),
     total_credits: Number(totalCredits.toFixed(2)),
+    unchecked_transactions,
+    unchecked_accounts_breakdown,
     double_entry_balanced: Math.abs(totalDebits - totalCredits) < 0.01,
     accounting_equation_balanced:
       Math.abs(totals.assets - (totals.liabilities + updatedEquity)) < 0.01,

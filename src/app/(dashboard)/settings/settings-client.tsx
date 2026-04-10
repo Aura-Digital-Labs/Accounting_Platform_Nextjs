@@ -1,6 +1,7 @@
 "use client";
 
-import Link from "next/link";
+import Link from "next/link";import toast from 'react-hot-toast';
+
 import { FormEvent, useState } from "react";
 import styles from "./settings.module.css";
 
@@ -74,7 +75,7 @@ export default function AdminSettingsClient({ heading = "Admin" }: { heading?: s
     clearStatus();
 
     if (!mode) {
-      setError("Select what you want to create first.");
+      toast.error("Select what you want to create first."); setError("Select what you want to create first.");
       return;
     }
 
@@ -82,24 +83,24 @@ export default function AdminSettingsClient({ heading = "Admin" }: { heading?: s
     try {
       if (mode === "admin") {
         await submitStandardUser("admin");
-        setSuccess("Admin created successfully.");
+        toast.success("Admin created successfully."); setSuccess("Admin created successfully.");
       } else if (mode === "financial_officer") {
         await submitStandardUser("financial_officer");
-        setSuccess("Financial officer created successfully.");
+        toast.success("Financial officer created successfully."); setSuccess("Financial officer created successfully.");
       } else if (mode === "employee") {
         await submitStandardUser("employee");
-        setSuccess("Employee created successfully.");
+        toast.success("Employee created successfully."); setSuccess("Employee created successfully.");
       } else if (mode === "client") {
         await submitStandardUser("client");
-        setSuccess("Client created successfully.");
+        toast.success("Client created successfully."); setSuccess("Client created successfully.");
       } else {
         await submitProjectManager();
-        setSuccess("Project manager created successfully.");
+        toast.success("Project manager created successfully."); setSuccess("Project manager created successfully.");
       }
 
       setForm(EMPTY_FORM);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Failed to create user");
+      const errMsg = submitError instanceof Error ? submitError.message : "Failed to create user"; toast.error(errMsg); setError(errMsg);
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";import toast from 'react-hot-toast';
+
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -253,7 +254,7 @@ export default function ClientPaymentsDashboard() {
         throw new Error(await parseApiError(res));
       }
 
-      setSuccessMessage("Payment submitted successfully.");
+      toast.success("Payment submitted successfully."); setSuccessMessage("Payment submitted successfully.");
       reset({
         projectId: "",
         paymentAccountId: "",

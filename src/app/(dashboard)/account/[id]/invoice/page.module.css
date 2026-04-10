@@ -121,17 +121,26 @@
   border: 1px solid #2563eb;
   background: #2563eb;
   color: #fff;
+  cursor: pointer;
 }
 
-.linkButton:hover {
+.linkButton:hover:not(:disabled) {
   background: #1d4ed8;
   border-color: #1d4ed8;
+}
+
+.linkButton:disabled {
+  background: #94a3b8;
+  border-color: #94a3b8;
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .linkButtonSecondary {
   border: 1px solid #cbd5e1;
   background: #fff;
   color: #1f2937;
+  cursor: pointer;
 }
 
 .linkButtonSecondary:hover {
@@ -142,5 +151,20 @@
   .metaGrid,
   .summaryGrid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  .linksRow {
+    display: none !important;
+  }
+  .page {
+    background: #fff;
+    display: block;
+  }
+  .card {
+    border: none;
+    box-shadow: none;
+    padding: 0;
   }
 }

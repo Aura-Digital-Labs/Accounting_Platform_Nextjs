@@ -4,6 +4,8 @@ import { requireAdmin, AuthError } from "@/lib/auth";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import styles from "./page.module.css";
+import LogInvoiceView from "./LogInvoiceView";
+import DownloadInvoiceButton from "./DownloadInvoiceButton";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +32,7 @@ type LinkedProjectRow = {
   name: string;
   budget: number | string;
   code: string | null;
+  financeStatus: string | null;
 };
 
 function formatCurrency(amount: number) {
@@ -69,23 +72,13 @@ export default async function GenerateInvoicePage({
     redirect("/");
   }
 
-  const currentUser = await requireAdmin();
-  const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
-  await logAuditAction({
-    userId: currentUser.id,
-    action: AuditAction.INVOICE_GENERATED,
-    resourceType: "Account",
-    resourceId: accountId.toString(),
-    description: `Generated invoice view for account ${accountId}`,
-    status: "success",
-  });
-
   const linkedProjects = (await prisma.$queryRaw(Prisma.sql`
     SELECT
       p.id,
       p.name,
       p.budget,
-      p.code
+      p.code,
+      p.finance_status as "financeStatus"
     FROM "Project" p
     WHERE p.account_id = ${accountId}
     LIMIT 1
@@ -96,6 +89,7 @@ export default async function GenerateInvoicePage({
   if (!project) {
     return (
       <section className={styles.page}>
+        <LogInvoiceView accountId={accountId} />
         <article className={styles.card}>
           <h1 className={styles.title}>Generate Invoice</h1>
           <p className={styles.empty}>This account is not linked to a project.</p>
@@ -204,8 +198,11 @@ export default async function GenerateInvoicePage({
   const remainingBalance = Number((totalBudget + totalExpenses - totalPayments).toFixed(2));
   const generatedDate = new Date();
 
+  const isDownloadDisabled = project.financeStatus !== "Ready to Deliver" && project.financeStatus !== "Payment Required";
+
   return (
     <section className={styles.page}>
+      <LogInvoiceView accountId={accountId} />
       <article className={styles.card}>
         <h1 className={styles.title}>Project Invoice</h1>
         <div className={styles.metaGrid}>
@@ -260,12 +257,27 @@ export default async function GenerateInvoicePage({
         </div>
 
         <div className={styles.linksRow}>
-          <Link href={`/account/${accountId}`} className={styles.linkButton}>
+          <Link href={`/account/${accountId}`} className={styles.linkButtonSecondary}>
             Back to Account Transactions
           </Link>
           <Link href="/" className={styles.linkButtonSecondary}>
             Back to Dashboard
           </Link>
+          <DownloadInvoiceButton
+            disabled={isDownloadDisabled}
+            invoiceData={{
+              projectName: project.code ? `${project.code} - ${project.name}` : project.name,
+              generatedDate: formatDate(generatedDate),
+              totalBudget: formatCurrency(totalBudget),
+              remainingBalance: formatCurrency(remainingBalance),
+              rows: rows.map(r => ({
+                date: formatDate(r.date),
+                description: r.description,
+                payment: r.payment > 0 ? formatCurrency(r.payment) : "-",
+                finalExpense: r.finalExpense > 0 ? formatCurrency(r.finalExpense) : "-",
+              }))
+            }}
+          />
         </div>
       </article>
     </section>

@@ -1,6 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import LoadingSpinner from '@/components/LoadingSpinner';
+import toast from 'react-hot-toast';
+
 import styles from "./AdminDashboard.module.css";
 
 type BankAccountOption = {
@@ -96,7 +99,7 @@ export default function BankStatementsDashboard({ accounts, onUploaded }: Props)
       const payload = (await res.json()) as BankStatementRow[];
       setStatements(payload);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load bank statements");
+      const errMsg = loadError instanceof Error ? loadError.message : "Failed to load bank statements"; toast.error(errMsg); setError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -143,7 +146,7 @@ export default function BankStatementsDashboard({ accounts, onUploaded }: Props)
     setError("");
 
     if (!uploadAccountId || !uploadMonth || !uploadFile) {
-      setError("Select account, month, and file.");
+      toast.error("Select account, month, and file."); setError("Select account, month, and file.");
       return;
     }
 
@@ -171,7 +174,7 @@ export default function BankStatementsDashboard({ accounts, onUploaded }: Props)
         await onUploaded();
       }
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Failed to upload bank statement");
+      const errMsg = uploadError instanceof Error ? uploadError.message : "Failed to upload bank statement"; toast.error(errMsg); setError(errMsg);
     } finally {
       setUploading(false);
     }
@@ -380,7 +383,7 @@ export default function BankStatementsDashboard({ accounts, onUploaded }: Props)
         </div>
       )}
 
-      {loading && <p className={styles.helperText}>Loading statements...</p>}
+      {loading && <LoadingSpinner />}
     </section>
   );
 }

@@ -51,7 +51,13 @@ export async function PUT(
     if (file && file.size > 0) {
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
-      referenceUrl = await uploadBytesToGoogleDrive(buffer, file.name, file.type);
+      referenceUrl = await uploadBytesToGoogleDrive({
+        fileBuffer: buffer,
+        originalName: file.name,
+        mimeType: file.type,
+        folderId: process.env.GOOGLE_DRIVE_FOLDER_ID_BANK_STATEMENTS || null,
+        prefix: 'fd'
+      });
     }
 
     const oldFd = await prisma.fixedDeposit.findUnique({

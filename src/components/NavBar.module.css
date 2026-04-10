@@ -1,11 +1,17 @@
-.navbar {
+.topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 2rem;
+  width: 100vw;
+  height: 64px;
+  padding: 0 1.5rem;
   background: white;
   border-bottom: 1px solid #e2e8f0;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 50;
 }
 
 .brand {
@@ -24,9 +30,26 @@
   border-radius: 6px;
 }
 
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 250px;
+  height: calc(100vh - 64px);
+  padding: 1.5rem;
+  background: white;
+  border-right: 1px solid #e2e8f0;
+  position: fixed;
+  top: 64px;
+  left: 0;
+  overflow-y: auto;
+  z-index: 40;
+}
+
 .links {
   display: flex;
-  gap: 1.5rem;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
 }
 
 .links a {
@@ -34,28 +57,24 @@
   color: #64748b;
   font-weight: 500;
   font-size: 0.95rem;
-  padding: 0.5rem 0;
-  position: relative;
-  transition: color 0.2s;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  transition: all 0.2s;
 }
 
 .links a:hover {
   color: #0f172a;
+  background: #f8fafc;
 }
 
 .links a.active {
   color: #2563eb;
+  background: #eff6ff;
 }
 
+/* Remove bottom border for active links since it's now a sidebar */
 .links a.active::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: #2563eb;
-  border-radius: 2px;
+  display: none;
 }
 
 .userSection {

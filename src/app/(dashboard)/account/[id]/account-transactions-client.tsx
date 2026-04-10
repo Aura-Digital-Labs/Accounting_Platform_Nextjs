@@ -1,6 +1,9 @@
 ﻿"use client";
 
 import Link from "next/link";
+import LoadingSpinner from '@/components/LoadingSpinner';
+import toast from 'react-hot-toast';
+
 import { FormEvent, useCallback, useMemo, useState } from "react";
 import { useEffect } from "react";
 import styles from "./page.module.css";
@@ -155,7 +158,7 @@ export default function AccountTransactionsClient({ accountId, isReadOnly = fals
       });
       setSelectedEntryIds([]);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load account data");
+      const errMsg = loadError instanceof Error ? loadError.message : "Failed to load account data"; toast.error(errMsg); setError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -221,7 +224,7 @@ export default function AccountTransactionsClient({ accountId, isReadOnly = fals
   const promptCheckSelected = () => {
     clearStatus();
     if (selectedEntryIds.length === 0) {
-      setError("Select at least one transaction to check.");
+      toast.error("Select at least one transaction to check."); setError("Select at least one transaction to check.");
       return;
     }
     setConfirmModal({ isOpen: true, action: "check", inputText: "" });
@@ -231,7 +234,7 @@ export default function AccountTransactionsClient({ accountId, isReadOnly = fals
     clearStatus();
 
     if (selectedEntryIds.length === 0) {
-      setError("Select at least one transaction to check.");
+      toast.error("Select at least one transaction to check."); setError("Select at least one transaction to check.");
       return;
     }
 
@@ -251,7 +254,7 @@ export default function AccountTransactionsClient({ accountId, isReadOnly = fals
       setMessage("Selected transactions checked. Checked items are now carried down.");
       await load();
     } catch (checkError) {
-      setError(checkError instanceof Error ? checkError.message : "Failed to check transactions");
+      const errMsg = checkError instanceof Error ? checkError.message : "Failed to check transactions"; toast.error(errMsg); setError(errMsg);
     }
   };
 
@@ -288,7 +291,7 @@ export default function AccountTransactionsClient({ accountId, isReadOnly = fals
       setEditingAccount(false);
       await load();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Failed to update account");
+      const errMsg = saveError instanceof Error ? saveError.message : "Failed to update account"; toast.error(errMsg); setError(errMsg);
     }
   };
 
@@ -315,7 +318,7 @@ export default function AccountTransactionsClient({ accountId, isReadOnly = fals
       setMessage("Account closed.");
       await load();
     } catch (closeError) {
-      setError(closeError instanceof Error ? closeError.message : "Failed to close account");
+      const errMsg = closeError instanceof Error ? closeError.message : "Failed to close account"; toast.error(errMsg); setError(errMsg);
     }
   };
 
@@ -323,7 +326,7 @@ export default function AccountTransactionsClient({ accountId, isReadOnly = fals
     clearStatus();
 
     if (checkedTransactionIds.has(transactionId)) {
-      setError("Checked transactions cannot be edited.");
+      toast.error("Checked transactions cannot be edited."); setError("Checked transactions cannot be edited.");
       return;
     }
 
@@ -349,7 +352,7 @@ export default function AccountTransactionsClient({ accountId, isReadOnly = fals
       });
       setEditingTransactionId(payload.id);
     } catch (editError) {
-      setError(editError instanceof Error ? editError.message : "Failed to open transaction editor");
+      const errMsg = editError instanceof Error ? editError.message : "Failed to open transaction editor"; toast.error(errMsg); setError(errMsg);
     }
   };
 
@@ -383,7 +386,7 @@ export default function AccountTransactionsClient({ accountId, isReadOnly = fals
       setEditingTransactionId(null);
       await load();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Failed to update transaction");
+      const errMsg = saveError instanceof Error ? saveError.message : "Failed to update transaction"; toast.error(errMsg); setError(errMsg);
     }
   };
 
@@ -391,7 +394,7 @@ export default function AccountTransactionsClient({ accountId, isReadOnly = fals
     return (
       <section className={styles.page}>
         <article className={styles.card}>
-          <p className={styles.empty}>Loading account data...</p>
+          <LoadingSpinner fullScreen />
         </article>
       </section>
     );

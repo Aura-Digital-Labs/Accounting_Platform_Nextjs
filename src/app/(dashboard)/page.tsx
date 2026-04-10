@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/auth";
 import AdminDashboard from "@/components/AdminDashboard";
 import FinancialOfficerDashboard from "@/components/FinancialOfficerDashboard";
+import FixedDepositsDashboard from "@/components/FixedDepositsDashboard";
 
 export default async function DashboardPage() {
   const session = await getServerSession();
@@ -14,11 +15,11 @@ export default async function DashboardPage() {
   const name = session.user.name || session.user.email || "User";
 
   if (role === "admin") {
-    return <AdminDashboard displayName={name} isReadOnly={true} />;
+    return <AdminDashboard displayName={name} isReadOnly={true} viewMode="overview" bottomContent={<FixedDepositsDashboard />} />;
   }
 
   if (role === "financial_officer") {
-    return <FinancialOfficerDashboard displayName={name} />;
+    return <FinancialOfficerDashboard displayName={name} viewMode="overview" />;
   }
 
   if (role === "employee") {
