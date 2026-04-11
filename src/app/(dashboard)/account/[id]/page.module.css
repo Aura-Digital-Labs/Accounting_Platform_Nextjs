@@ -34,6 +34,15 @@
   box-shadow: 0 24px 55px rgba(15, 23, 42, 0.22);
 }
 
+.modalPanelWide {
+  width: min(900px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
 .modalHeader {
   display: flex;
   align-items: center;

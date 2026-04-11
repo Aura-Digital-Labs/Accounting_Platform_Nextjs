@@ -68,7 +68,7 @@ export async function PATCH(
     // Build update data, only including provided fields
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
-      "code", "name", "type", "description", "budget",
+      "code", "name", "type", "subType", "isCurrent", "description", "budget",
       "includeCashFlow", "isPaymentAccepting", "isPettyCash",
       "accountNumber", "accountHolderName", "bankName", "bankBranch",
     ];

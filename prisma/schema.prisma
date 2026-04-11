@@ -138,6 +138,8 @@ model Account {
   code               String      @unique @db.VarChar(64)
   name               String      @db.VarChar(255)
   type               AccountType
+  subType            String?     @map("sub_type") @db.VarChar(100)
+  isCurrent          Boolean?    @default(true) @map("is_current")
   description        String?     @db.Text
   projectId          Int?        @unique @map("project_id")
   budget             Decimal?    @db.Decimal(14, 2)

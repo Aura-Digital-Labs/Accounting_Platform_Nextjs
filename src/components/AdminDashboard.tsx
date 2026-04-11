@@ -391,6 +391,8 @@ export default function AdminDashboard({
     code: "",
     name: "",
     type: "asset" as AccountType,
+    subType: "",
+    isCurrent: true,
     includeCashFlow: false,
     isPaymentAccepting: false,
     isPettyCash: false,
@@ -947,6 +949,8 @@ export default function AdminDashboard({
           code: accountForm.code,
           name: accountForm.name,
           type: accountForm.type,
+          subType: accountForm.subType || null,
+          isCurrent: accountForm.isCurrent,
           includeCashFlow: accountForm.includeCashFlow,
           isPaymentAccepting: accountForm.isPaymentAccepting,
           isPettyCash: accountForm.isPettyCash,
@@ -967,6 +971,8 @@ export default function AdminDashboard({
         code: "",
         name: "",
         type: "asset",
+        subType: "none",
+        isCurrent: true,
         includeCashFlow: false,
         isPaymentAccepting: false,
         isPettyCash: false,
@@ -2053,17 +2059,7 @@ export default function AdminDashboard({
               </button>
             </div>
             <form className={styles.modalBody} onSubmit={createCustomAccount}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%", maxWidth: "400px", margin: "0 auto" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  <label style={{ fontSize: "0.875rem", fontWeight: "500", color: "#374151" }}>Account Code</label>
-                  <input
-                    className={styles.input}
-                    placeholder="e.g. 1000"
-                    value={accountForm.code}
-                    onChange={(e) => setAccountForm((prev) => ({ ...prev, code: e.target.value }))}
-                    required
-                  />
-                </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%", maxWidth: "400px" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                   <label style={{ fontSize: "0.875rem", fontWeight: "500", color: "#374151" }}>Account Name</label>
                   <input
@@ -2090,38 +2086,90 @@ export default function AdminDashboard({
                     <option value="expense">Expense</option>
                   </select>
                 </div>
+                {accountForm.type === "expense" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <label style={{ fontSize: "0.875rem", fontWeight: "500", color: "#374151" }}>Sub Type</label>
+                    <select
+                      className={styles.input}
+                      value={accountForm.subType}
+                      onChange={(e) =>
+                        setAccountForm((prev) => ({ ...prev, subType: e.target.value }))
+                      }
+                    >
+                      <option value="">Select Sub Type...</option>
+                      <option value="Cost of Services">Cost of Services</option>
+                      <option value="Administrative Expenses">Administrative Expenses</option>
+                      <option value="Operating Expenses">Operating Expenses</option>
+                      <option value="Financial Expenses">Financial Expenses</option>
+                      <option value="Tax">Tax</option>
+                      <option value="Other Expenses">Other Expenses</option>
+                    </select>
+                  </div>
+                )}
+                {accountForm.type === "revenue" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                    <label style={{ fontSize: "0.875rem", fontWeight: "500", color: "#374151" }}>Sub Type</label>
+                    <select
+                      className={styles.input}
+                      value={accountForm.subType}
+                      onChange={(e) =>
+                        setAccountForm((prev) => ({ ...prev, subType: e.target.value }))
+                      }
+                    >
+                      <option value="">Select Sub Type...</option>
+                      <option value="Service Revenue">Service Revenue</option>
+                      <option value="Other Income">Other Income</option>
+                    </select>
+                  </div>
+                )}
               </div>
               <div className={styles.checkboxRow}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={accountForm.includeCashFlow}
-                    onChange={(e) =>
-                      setAccountForm((prev) => ({ ...prev, includeCashFlow: e.target.checked }))
-                    }
-                  />{" "}
-                  Include in cash flow
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={accountForm.isPaymentAccepting}
-                    onChange={(e) =>
-                      setAccountForm((prev) => ({ ...prev, isPaymentAccepting: e.target.checked }))
-                    }
-                  />{" "}
-                  Payment accepting
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={accountForm.isPettyCash}
-                    onChange={(e) =>
-                      setAccountForm((prev) => ({ ...prev, isPettyCash: e.target.checked }))
-                    }
-                  />{" "}
-                  Petty cash
-                </label>
+                {(accountForm.type === "asset" || accountForm.type === "liability") && (
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={accountForm.isCurrent}
+                      onChange={(e) =>
+                        setAccountForm((prev) => ({ ...prev, isCurrent: e.target.checked }))
+                      }
+                    />{" "}
+                    Current
+                  </label>
+                )}
+                {accountForm.type === "asset" && (
+                  <>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={accountForm.includeCashFlow}
+                        onChange={(e) =>
+                          setAccountForm((prev) => ({ ...prev, includeCashFlow: e.target.checked }))
+                        }
+                      />{" "}
+                      Include in cash flow
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={accountForm.isPaymentAccepting}
+                        onChange={(e) =>
+                          setAccountForm((prev) => ({ ...prev, isPaymentAccepting: e.target.checked }))
+                        }
+                      />{" "}
+                      Payment accepting
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={accountForm.isPettyCash}
+                        onChange={(e) =>
+                          setAccountForm((prev) => ({ ...prev, isPettyCash: e.target.checked }))
+                        }
+                      />{" "}
+                      Petty cash
+                    </label>
+                  </>
+                )}
               </div>
 
               {accountForm.isPaymentAccepting && (
