@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { uploadBytesToGoogleDrive } from "@/lib/googleDrive";
+import {
+  uploadBytesToGoogleDrive,
+  ensureDrivePath,
+} from "@/lib/googleDrive";
 import { Account, EntryType } from "@prisma/client";
 import { getServerSession } from "@/lib/auth";
 import { logAuditAction, AuditAction } from "@/lib/auditLog";
@@ -51,11 +54,18 @@ export async function PUT(
     if (file && file.size > 0) {
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
+      const folderId = await ensureDrivePath([
+        "Accounting Platform",
+        "Financial_Records",
+        "Fixed_Deposits",
+        `FD - ${bankName} - ${accountNumber}`,
+      ]);
+
       referenceUrl = await uploadBytesToGoogleDrive({
         fileBuffer: buffer,
         originalName: file.name,
         mimeType: file.type,
-        folderId: process.env.GOOGLE_DRIVE_FOLDER_ID_BANK_STATEMENTS || null,
+        folderId,
         prefix: 'fd'
       });
     }

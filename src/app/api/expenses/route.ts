@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, AuthError } from "@/lib/auth";
-import { uploadBytesToGoogleDrive } from "@/lib/googleDrive";
+import {
+  uploadBytesToGoogleDrive,
+  ensureDrivePath,
+} from "@/lib/googleDrive";
 import { Decimal } from "@prisma/client/runtime/library";
 import {
   createExpenseRaw,
@@ -127,11 +130,18 @@ export async function POST(req: NextRequest) {
     if (receiptFile && receiptFile.size > 0) {
       const buffer = Buffer.from(await receiptFile.arrayBuffer());
       try {
+        const folderId = await ensureDrivePath([
+          "Accounting Platform",
+          "Projects",
+          project.name,
+          "Expenses",
+        ]);
+
         receiptPath = await uploadBytesToGoogleDrive({
           fileBuffer: buffer,
           originalName: receiptFile.name,
           mimeType: receiptFile.type,
-          folderId: process.env.GOOGLE_DRIVE_EXPENSES_FOLDER_ID || null,
+          folderId,
           prefix: `expense-${currentUser.id}-${projectId}`,
         });
       } catch (err) {

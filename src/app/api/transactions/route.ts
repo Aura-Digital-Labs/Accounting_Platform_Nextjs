@@ -5,7 +5,10 @@ import {
   createTransaction,
   AccountingError,
 } from "@/lib/accounting";
-import { uploadBytesToGoogleDrive } from "@/lib/googleDrive";
+import {
+  uploadBytesToGoogleDrive,
+  ensureDrivePath,
+} from "@/lib/googleDrive";
 
 /**
  * GET /api/transactions — List transactions (admin only)
@@ -125,11 +128,16 @@ export async function POST(req: NextRequest) {
       if (file && file.size > 0) {
         const buffer = Buffer.from(await file.arrayBuffer());
         try {
+          const folderId = await ensureDrivePath([
+            "Accounting Platform",
+            "Other",
+          ]);
+
           documentLink = await uploadBytesToGoogleDrive({
             fileBuffer: buffer,
             originalName: file.name,
             mimeType: file.type,
-            folderId: process.env.GOOGLE_DRIVE_EXPENSES_FOLDER_ID || null,
+            folderId,
             prefix: `transaction-${user.id}`,
           });
         } catch (err) {

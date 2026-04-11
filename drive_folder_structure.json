@@ -3,11 +3,16 @@
     "Projects": {
       "Project_1": {
         "Payments": {},
-        "Expenses": {}
+        "Expenses": {},
+        "Invoices": {},
+        "Receipts": {}
+
       },
       "Project_2": {
         "Payments": {},
-        "Expenses": {}
+        "Expenses": {},
+        "Invoices": {},
+        "Receipts": {}
       }
     },
     "Financial_Records": {

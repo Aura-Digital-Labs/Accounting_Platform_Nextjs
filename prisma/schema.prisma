@@ -225,6 +225,8 @@ model Project {
   accountId                  Int      @unique @map("account_id")
   clientId                   String?  @map("client_id") @db.Text
   clientPassword             String?  @map("client_password") @db.VarChar(255)
+  lastInvoiceNo              String?  @map("last_invoice_no") @db.VarChar(255)
+  invoiceCount               Int      @default(0) @map("invoice_count")
 
   // Relations
   account     Account                    @relation("ProjectAccount", fields: [accountId], references: [id])

@@ -1297,6 +1297,7 @@ export default function AdminDashboard({
                 <th>Project</th>
                 <th>Client</th>
                 <th className={styles.numericCell}>Amount</th>
+                <th>Document</th>
                 <th>PM Notes</th>
                 <th>Status</th>
                 {!isReadOnly && <th>Actions</th>}
@@ -1310,6 +1311,26 @@ export default function AdminDashboard({
                   <td>{payment.project_name}</td>
                   <td>{payment.client_name || `Client #${payment.client_id}`}</td>
                   <td className={styles.numericCell}>{formatCurrency(payment.amount)}</td>
+                  <td>
+                    {payment.document_link ? (
+                      payment.document_link.startsWith("/") ? (
+                        <Link href={payment.document_link} className={styles.accountLink}>
+                          View
+                        </Link>
+                      ) : (
+                        <a
+                          href={payment.document_link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className={styles.accountLink}
+                        >
+                          View
+                        </a>
+                      )
+                    ) : (
+                      "-"
+                    )}
+                  </td>
                   <td>{payment.pm_approval_notes || "-"}</td>
                   <td>{String(payment.status).toLowerCase().replace(/_/g, ' ')}</td>
                   {!isReadOnly && (

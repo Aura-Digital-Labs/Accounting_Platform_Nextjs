@@ -1,0 +1,1 @@
+const { jsPDF } = require('jspdf'); const fs = require('fs'); try { const doc = new jsPDF(); const b64 = fs.readFileSync('public/aura-logo.webp').toString('base64'); doc.addImage('data:image/webp;base64,' + b64, 'WEBP', 10, 10, 50, 50); console.log('WEBP supported'); } catch (e) { console.log('WEBP error', e.message); }

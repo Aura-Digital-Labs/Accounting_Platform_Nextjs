@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { uploadBytesToGoogleDrive } from "@/lib/googleDrive";
+import {
+  uploadBytesToGoogleDrive,
+  ensureDrivePath,
+} from "@/lib/googleDrive";
 
 let needsManualIntegerIdsCache: boolean | null = null;
 let hasEntryTypeEnumCache: boolean | null = null;
@@ -104,11 +107,18 @@ export async function POST(req: NextRequest) {
     if (file && file.size > 0) {
       try {
         const buffer = Buffer.from(await file.arrayBuffer());
+        const folderId = await ensureDrivePath([
+          "Accounting Platform",
+          "Financial_Records",
+          "Fixed_Deposits",
+          `FD - ${bankName} - ${accountNumber}`,
+        ]);
+
         referenceDocumentUrl = await uploadBytesToGoogleDrive({
           fileBuffer: buffer,
           originalName: file.name,
           mimeType: file.type,
-          folderId: null,
+          folderId,
           prefix: "FixedDeposit",
         });
       } catch (uploadErr) {

@@ -3,13 +3,7 @@
 import styles from "./page.module.css";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-
-type InvoiceRow = {
-  date: string;
-  description: string;
-  payment: string;
-  finalExpense: string;
-};
+import { useState } from "react";
 
 export default function DownloadInvoiceButton({
   disabled,
@@ -17,76 +11,237 @@ export default function DownloadInvoiceButton({
 }: {
   disabled: boolean;
   invoiceData: {
+    projectId: string;
+    invoiceNo: string;
+    projectNameWithCode: string;
     projectName: string;
     generatedDate: string;
-    totalBudget: string;
-    remainingBalance: string;
-    rows: InvoiceRow[];
+    initialBudget: string;
+    totals: {
+      subtotal: string;
+      tax: string;
+      grandTotal: string;
+      totalPaymentDone: string;
+      remainingPaymentDue: string;
+    };
+    expenses: { description: string; qty: string; unitPrice: string; totalAmount: string; }[];
+    payments: { paymentDate: string; amountPaid: string; paymentMethod: string; reference: string; notes: string; }[];
   };
 }) {
-  const handleDownload = () => {
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleDownload = async () => {
+    setIsUploading(true);
     const doc = new jsPDF({ format: "a4", unit: "mm" });
 
-    // Title / Header
-    doc.setFontSize(22);
+    // Load png logo
+    let logoBase64 = "";
+    try {
+      const response = await fetch("/aura-logo.png");
+      const blob = await response.blob();
+      const reader = new FileReader();
+      logoBase64 = await new Promise((resolve) => {
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+      // Extract just the b64 part if it has a prefix
+      if (logoBase64.startsWith("data")) {
+        logoBase64 = logoBase64.split(",")[1];
+      }
+    } catch(e) {
+      console.error("Failed to load watermark", e);
+    }
+
+    if (logoBase64) {
+      // Add logo on top left
+      doc.addImage(`data:image/png;base64,${logoBase64}`, "PNG", 14, 15, 16, 16);
+    }
+
+    // Brand and Title
     doc.setFont("helvetica", "bold");
-    doc.text("INVOICE", 14, 20);
+    doc.setFontSize(26);
+    doc.setTextColor(14, 165, 233);
+    doc.text("INVOICE", logoBase64 ? 34 : 14, 25);
 
-    // Project Info
-    doc.setFontSize(11);
     doc.setFont("helvetica", "normal");
-    doc.text(`Project Name: ${invoiceData.projectName}`, 14, 30);
-    doc.text(`Date Generated: ${invoiceData.generatedDate}`, 14, 36);
-    doc.text(`Total Budget: ${invoiceData.totalBudget}`, 14, 42);
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text("Aura Accounting Platform", logoBase64 ? 34 : 14, 31);
+    
+    // Project and Invoice Info
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(14, 165, 233);
+    doc.text("Project & Billing Details", 14, 45);
 
-    // Table
-    const tableData = invoiceData.rows.map((row) => [
-      row.date,
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(0);
+    doc.text(`Invoice No: ${invoiceData.invoiceNo}`, 14, 51);
+    doc.text(`Project Name: ${invoiceData.projectNameWithCode}`, 14, 57);
+    doc.text(`Invoice Date: ${invoiceData.generatedDate}`, 14, 63);
+
+    // Main Expenses Table
+    const expenseTableData = invoiceData.expenses.map((row) => [
       row.description,
-      row.payment,
-      row.finalExpense,
+      row.qty,
+      row.unitPrice,
+      row.totalAmount,
     ]);
 
     autoTable(doc, {
-      startY: 50,
-      head: [["Date", "Description", "Payment", "Final Expenses"]],
-      body: tableData,
+      startY: 73,
+      head: [["Description", "Quantity / Unit", "Unit Price", "Total Amount"]],
+      body: expenseTableData,
       theme: "striped",
-      headStyles: { fillColor: [37, 99, 235], textColor: 255 }, // matches the app's brand blue
-      styles: { fontSize: 10, cellPadding: 4 },
+      headStyles: { fillColor: [14, 165, 233], textColor: 255 }, // Light Blue
+      styles: { fontSize: 10, cellPadding: 5 },
       columnStyles: {
-        0: { cellWidth: 35 },
-        2: { halign: "right" },
-        3: { halign: "right" },
+        0: { cellWidth: 80 },
+        3: { halign: "right", fontStyle: "bold" },
       },
     });
 
-    // Summary / Balance
-    const finalY = (doc as any).lastAutoTable.finalY || 50;
+    // Summary Section
+    const finalYExpenses = (doc as any).lastAutoTable.finalY || 64;
+    const summaryX = 130;
+    let currentY = finalYExpenses + 10;
 
+    doc.setFontSize(10);
+    doc.text(`Subtotal:`, summaryX, currentY);
+    doc.text(invoiceData.totals.subtotal, 196, currentY, { align: "right" });
+    
+    // Omit tax if 0, or just show it
+    currentY += 6;
+    doc.text(`Tax / Additional:`, summaryX, currentY);
+    doc.text(invoiceData.totals.tax, 196, currentY, { align: "right" });
+
+    currentY += 8;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
+    doc.setTextColor(14, 165, 233); // Light Blue for Grand Total Label
+    doc.text(`Grand Total:`, summaryX, currentY);
+    doc.text(invoiceData.totals.grandTotal, 196, currentY, { align: "right" });
+    
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
     doc.setTextColor(0);
-    doc.text(`Remaining Balance: ${invoiceData.remainingBalance}`, 14, finalY + 12);
+    currentY += 6;
+    doc.text(`Total Payment Done:`, summaryX, currentY);
+    doc.text(invoiceData.totals.totalPaymentDone, 196, currentY, { align: "right" });
+
+    currentY += 8;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    // Use an accent color for Remaining Due (light blue)
+    doc.setTextColor(14, 165, 233);
+    doc.text(`Remaining Due:`, summaryX, currentY);
+    doc.text(invoiceData.totals.remainingPaymentDue, 196, currentY, { align: "right" });
+    doc.setTextColor(0);
+
+    let paymentHistoryStartY = currentY + 20;
+
+    // Optional Check: Will table break page?
+    if (paymentHistoryStartY > 240) {
+      doc.addPage();
+      paymentHistoryStartY = 20;
+    }
+
+    // Payment History Table
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(14, 165, 233);
+    doc.text("Payment History", 14, paymentHistoryStartY);
+    doc.setTextColor(0);
+
+    const paymentTableData = invoiceData.payments.map((row) => [
+      row.paymentDate,
+      row.amountPaid,
+      row.paymentMethod,
+      row.reference,
+      row.notes,
+    ]);
+
+    if (paymentTableData.length === 0) {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(10);
+      doc.text("No payments recorded yet.", 14, paymentHistoryStartY + 8);
+    } else {
+      autoTable(doc, {
+        startY: paymentHistoryStartY + 6,
+        head: [["Date", "Amount Paid", "Payment Method", "Reference", "Notes"]],
+        body: paymentTableData,
+        theme: "grid",
+        headStyles: { fillColor: [14, 165, 233], textColor: 255 }, // Light Blue
+        styles: { fontSize: 9, cellPadding: 4 },
+        columnStyles: {
+          1: { fontStyle: "bold" },
+        },
+      });
+    }
+
+    const finalYPayments = (doc as any).lastAutoTable?.finalY || paymentHistoryStartY + 10;
 
     // Footer
-    doc.setFontSize(10);
+    doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(150);
-    doc.text("Thank you for your business.", 14, finalY + 30);
+    doc.setTextColor(14, 165, 233); // Light Blue Footer
+    doc.text("Thank you for your business. For any inquiries, contact our project billing team.", 14, Math.max(finalYPayments + 20, 280));
 
-    // Trigger Download
-    doc.save(`Invoice_${invoiceData.projectName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`);
+    // Global Watermark (draw after tables so cell backgrounds don't cover it)
+    if (logoBase64) {
+      const pageCount = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setGState(new (doc as any).GState({ opacity: 0.1 }));
+        doc.addImage(`data:image/png;base64,${logoBase64}`, "PNG", 55, 100, 100, 100);
+        doc.setGState(new (doc as any).GState({ opacity: 1.0 }));
+      }
+    }
+
+    // Get the PDF as a Blob
+    const pdfBlob = doc.output("blob");
+
+    // Trigger Download locally
+    const fileName = `${invoiceData.invoiceNo}.pdf`;
+    doc.save(fileName);
+
+    // Upload to Google Drive via our API
+    try {
+      const formData = new FormData();
+      // Remove any specific splitting and use project name for folder structure
+      // or at least properly.
+      formData.append("projectId", invoiceData.projectId);
+      formData.append("projectName", invoiceData.projectName);
+      formData.append("invoiceNo", invoiceData.invoiceNo);
+      formData.append("file", new File([pdfBlob], fileName, { type: "application/pdf" }));
+
+      const res = await fetch("/api/invoices/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        console.error("Failed to upload invoice to Google Drive");
+      } else {
+        // Refresh page to get the updated invoice sequence
+        window.location.reload();
+      }
+    } catch (err) {
+      console.error("Error uploading to drive", err);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
     <button
       className={styles.linkButton}
-      disabled={disabled}
+      disabled={disabled || isUploading}
       onClick={handleDownload}
       title={disabled ? "Cannot download: Project finance status is Outdated" : "Download as PDF"}
     >
-      Download Invoice (PDF)
+      {isUploading ? "Downloading & Saving to Drive..." : "Download Invoice (PDF)"}
     </button>
   );
 }

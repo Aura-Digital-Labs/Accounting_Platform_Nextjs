@@ -20,6 +20,62 @@ function buildCredentials() {
   return oauth2Client;
 }
 
+// ─── Folders ──────────────────────────────────────────────────────
+
+async function getOrCreateFolder(auth: any, name: string, parentId?: string): Promise<string> {
+  const drive = google.drive({ version: "v3", auth });
+  const parentQuery = parentId ? ` and '${parentId}' in parents` : " and 'root' in parents";
+  // Escape single quotes in name
+  const safeName = name.replace(/'/g, "\\'");
+  const query = `mimeType='application/vnd.google-apps.folder' and name='${safeName}' and trashed=false${parentQuery}`;
+
+  const res = await drive.files.list({
+    q: query,
+    spaces: "drive",
+    fields: "files(id, name)",
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+  });
+
+  if (res.data.files && res.data.files.length > 0) {
+    return res.data.files[0].id!;
+  }
+
+  const fileMetadata: Record<string, unknown> = {
+    name: name,
+    mimeType: "application/vnd.google-apps.folder",
+  };
+  if (parentId) {
+    fileMetadata.parents = [parentId];
+  }
+
+  const folder = await drive.files.create({
+    requestBody: fileMetadata as { name: string; mimeType: string; parents?: string[] },
+    fields: "id",
+    supportsAllDrives: true,
+  });
+
+  // Automatically make new structured folders accessible (anyone reader)
+  await drive.permissions.create({
+    fileId: folder.data.id!,
+    requestBody: { type: "anyone", role: "reader" },
+    supportsAllDrives: true,
+  });
+
+  return folder.data.id!;
+}
+
+export async function ensureDrivePath(pathSegments: string[]): Promise<string> {
+  const auth = buildCredentials();
+  let currentParentId: string | undefined = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
+
+  for (const segment of pathSegments) {
+    currentParentId = await getOrCreateFolder(auth, segment, currentParentId);
+  }
+
+  return currentParentId!;
+}
+
 // ─── Upload ──────────────────────────────────────────────────────
 
 /**
@@ -32,8 +88,9 @@ export async function uploadBytesToGoogleDrive(params: {
   mimeType: string | null;
   folderId: string | null;
   prefix: string;
+  exactName?: boolean;
 }): Promise<string> {
-  const { fileBuffer, originalName, mimeType, folderId, prefix } = params;
+  const { fileBuffer, originalName, mimeType, folderId, prefix, exactName } = params;
 
   const auth = buildCredentials();
   const drive = google.drive({ version: "v3", auth });
@@ -43,7 +100,7 @@ export async function uploadBytesToGoogleDrive(params: {
     .toISOString()
     .replace(/[-:T]/g, "")
     .slice(0, 14);
-  const fileName = `${prefix}-${timestamp}-${safeName}`;
+  const fileName = exactName ? safeName : `${prefix}-${timestamp}-${safeName}`;
 
   const fileMetadata: Record<string, unknown> = { name: fileName };
   if (folderId) {

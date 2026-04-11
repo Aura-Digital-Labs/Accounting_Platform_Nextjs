@@ -1,3 +1,4 @@
+import { generateReceiptPdf, sendReceiptEmail } from "@/lib/emailService";
 import { syncProjectFinanceStatus } from "@/lib/projectFinance";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -87,8 +88,17 @@ export async function PATCH(
       status: "success",
     });
 
-        await syncProjectFinanceStatus(payment.projectId);
-return NextResponse.json(updated);
+    await syncProjectFinanceStatus(payment.projectId);
+
+    // Send email with receipt (or rejection)
+    let emailStatus = { emailSent: false, receiptLink: "" };
+    try {
+      emailStatus = await sendReceiptEmail(payment.id, body.status) || emailStatus;
+    } catch (err) {
+      console.error("Error sending receipt email", err);
+    }
+
+    return NextResponse.json({ ...updated, ...emailStatus });
   } catch (error: unknown) {
     if (error instanceof AuthError) {
       return NextResponse.json({ detail: error.message }, { status: error.status });

@@ -33,6 +33,8 @@ type LinkedProjectRow = {
   budget: number | string;
   code: string | null;
   financeStatus: string | null;
+  invoiceCount: number;
+  lastInvoiceNo: string | null;
 };
 
 function formatCurrency(amount: number) {
@@ -78,7 +80,9 @@ export default async function GenerateInvoicePage({
       p.name,
       p.budget,
       p.code,
-      p.finance_status as "financeStatus"
+      p.finance_status as "financeStatus",
+      p.invoice_count as "invoiceCount",
+      p.last_invoice_no as "lastInvoiceNo"
     FROM "Project" p
     WHERE p.account_id = ${accountId}
     LIMIT 1
@@ -171,10 +175,14 @@ export default async function GenerateInvoicePage({
       return;
     }
 
-    if (normalizedEntryType === "debit") {
+    if (normalizedSourceType === "client_payment" || normalizedEntryType === "credit") {
+      // Only count actual client payments as "payment" to reduce wrong totals from internal credits.
+      if (normalizedSourceType === "client_payment") {
+        row.payment = Number((row.payment + amount).toFixed(2));
+      }
+    } else if (normalizedEntryType === "debit") {
+      // Expenses or internal debits
       row.finalExpense = Number((row.finalExpense + amount).toFixed(2));
-    } else {
-      row.payment = Number((row.payment + amount).toFixed(2));
     }
   });
 
@@ -200,6 +208,80 @@ export default async function GenerateInvoicePage({
 
   const isDownloadDisabled = project.financeStatus !== "Ready to Deliver" && project.financeStatus !== "Payment Required";
 
+  const expenseItems = orderedRows
+    .filter(r => r.finalExpense > 0)
+    .map(r => ({
+      description: r.description,
+      qty: "-",
+      unitPrice: "-",
+      totalAmount: r.finalExpense,
+    }));
+
+  const paymentItems = orderedRows
+    .filter(r => r.payment > 0)
+    .map((r, i) => ({
+      paymentDate: formatDate(r.date),
+      amountPaid: r.payment,
+      paymentMethod: "Bank Transfer",
+      reference: `TXN-${i + 1}`,
+      notes: r.description,
+    }));
+
+  const totalExpenseSum = expenseItems.reduce((acc, curr) => acc + curr.totalAmount, 0);
+  const subtotalRaw = totalBudget + totalExpenseSum;
+  const taxRaw = 0; // Tax or additional charges if requested later
+  const grandTotalRaw = subtotalRaw + taxRaw;
+  const totalPaymentDoneRaw = paymentItems.reduce((acc, curr) => acc + curr.amountPaid, 0);
+  const remainingPaymentDueRaw = grandTotalRaw - totalPaymentDoneRaw;
+
+  const projLetters = project.name.replace(/[^a-zA-Z]/g, "").substring(0, 3).toUpperCase().padEnd(3, 'X');
+  // Use accountId as the numeric identifier since Project ID is a hash
+  const projNum = String(accountId).padStart(3, '0');
+  const nextCount = (project.invoiceCount || 0) + 1;
+  const countStr = String(nextCount).padStart(2, '0');
+  const invoiceNo = `INV${projNum}${projLetters}-${countStr}`;
+
+  const invoiceData = {
+    projectId: project.id,
+    invoiceNo,
+    projectNameWithCode: project.code ? `${project.code} - ${project.name}` : project.name,
+    projectName: project.name,
+    generatedDate: formatDate(generatedDate),
+    initialBudget: formatCurrency(totalBudget),
+    totals: {
+      subtotal: formatCurrency(subtotalRaw),
+      tax: formatCurrency(taxRaw),
+      grandTotal: formatCurrency(grandTotalRaw),
+      totalPaymentDone: formatCurrency(totalPaymentDoneRaw),
+      remainingPaymentDue: formatCurrency(remainingPaymentDueRaw),
+    },
+    expenses: [
+      { description: "Initial Budget", qty: "1", unitPrice: formatCurrency(totalBudget), totalAmount: formatCurrency(totalBudget) },
+      ...expenseItems.map(e => ({
+        description: e.description,
+        qty: e.qty,
+        unitPrice: e.unitPrice,
+        totalAmount: formatCurrency(e.totalAmount)
+      }))
+    ],
+    payments: paymentItems.map(p => ({
+      paymentDate: p.paymentDate,
+      amountPaid: formatCurrency(p.amountPaid),
+      paymentMethod: p.paymentMethod,
+      reference: p.reference,
+      notes: p.notes,
+    })),
+    // Keep old rows for the screen display
+    rows: rows.map(r => ({
+      date: formatDate(r.date),
+      description: r.description,
+      payment: r.payment > 0 ? formatCurrency(r.payment) : "-",
+      finalExpense: r.finalExpense > 0 ? formatCurrency(r.finalExpense) : "-",
+    })),
+    totalBudget: formatCurrency(totalBudget),
+    remainingBalance: formatCurrency(remainingBalance),
+  };
+
   return (
     <section className={styles.page}>
       <LogInvoiceView accountId={accountId} />
@@ -217,43 +299,90 @@ export default async function GenerateInvoicePage({
             <p className={styles.metaValue}>{formatDate(generatedDate)}</p>
           </div>
           <div>
+            <p className={styles.metaLabel}>Invoice No</p>
+            <p className={styles.metaValue}>{invoiceNo}</p>
+          </div>
+          <div>
             <p className={styles.metaLabel}>Total Budget</p>
             <p className={styles.metaValue}>{formatCurrency(totalBudget)}</p>
           </div>
         </div>
 
-        {rows.length === 0 ? (
-          <p className={styles.empty}>No approved payments or approved expenses found for this project.</p>
-        ) : (
-          <div className={styles.tableWrap}>
+        <div className={styles.tableWrap}>
+          <h2 className={styles.sectionTitle}>Project &amp; Billing Details</h2>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th>Quantity / Unit</th>
+                <th>Unit Price</th>
+                <th style={{ textAlign: "right" }}>Total Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoiceData.expenses.map((row, index) => (
+                <tr key={`exp-${index}`}>
+                  <td>{row.description}</td>
+                  <td>{row.qty}</td>
+                  <td>{row.unitPrice}</td>
+                  <td style={{ textAlign: "right", fontWeight: "bold" }}>{row.totalAmount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className={styles.summarySection}>
+          <div className={styles.summaryRow}>
+            <span>Subtotal:</span>
+            <span>{invoiceData.totals.subtotal}</span>
+          </div>
+          <div className={styles.summaryRow}>
+            <span>Tax / Additional:</span>
+            <span>{invoiceData.totals.tax}</span>
+          </div>
+          <div className={`${styles.summaryRow} ${styles.summaryBold}`}>
+            <span>Grand Total:</span>
+            <span>{invoiceData.totals.grandTotal}</span>
+          </div>
+          <div className={styles.summaryRow}>
+            <span>Total Payment Done:</span>
+            <span>{invoiceData.totals.totalPaymentDone}</span>
+          </div>
+          <div className={`${styles.summaryRow} ${styles.summaryHighlight}`}>
+            <span>Remaining Due:</span>
+            <span>{invoiceData.totals.remainingPaymentDue}</span>
+          </div>
+        </div>
+
+        <div className={styles.tableWrap} style={{ marginTop: "2rem" }}>
+          <h2 className={styles.sectionTitle}>Payment History</h2>
+          {invoiceData.payments.length === 0 ? (
+            <p className={styles.empty}>No payments recorded yet.</p>
+          ) : (
             <table className={styles.table}>
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Description</th>
-                  <th>Payment</th>
-                  <th>Final Expenses</th>
+                  <th>Amount Paid</th>
+                  <th>Payment Method</th>
+                  <th>Reference</th>
+                  <th>Notes</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, index) => (
-                  <tr key={`${row.description}-${index}`}>
-                    <td>{formatDate(row.date)}</td>
-                    <td>{row.description}</td>
-                    <td>{row.payment > 0 ? formatCurrency(row.payment) : "-"}</td>
-                    <td>{row.finalExpense > 0 ? formatCurrency(row.finalExpense) : "-"}</td>
+                {invoiceData.payments.map((row, index) => (
+                  <tr key={`pay-${index}`}>
+                    <td>{row.paymentDate}</td>
+                    <td style={{ fontWeight: "bold" }}>{row.amountPaid}</td>
+                    <td>{row.paymentMethod}</td>
+                    <td>{row.reference}</td>
+                    <td>{row.notes}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-
-        <div className={styles.summaryGrid}>
-          <div className={styles.summaryCard}>
-            <p className={styles.metaLabel}>Remaining Balance</p>
-            <p className={styles.summaryValue}>{formatCurrency(remainingBalance)}</p>
-          </div>
+          )}
         </div>
 
         <div className={styles.linksRow}>
@@ -265,18 +394,7 @@ export default async function GenerateInvoicePage({
           </Link>
           <DownloadInvoiceButton
             disabled={isDownloadDisabled}
-            invoiceData={{
-              projectName: project.code ? `${project.code} - ${project.name}` : project.name,
-              generatedDate: formatDate(generatedDate),
-              totalBudget: formatCurrency(totalBudget),
-              remainingBalance: formatCurrency(remainingBalance),
-              rows: rows.map(r => ({
-                date: formatDate(r.date),
-                description: r.description,
-                payment: r.payment > 0 ? formatCurrency(r.payment) : "-",
-                finalExpense: r.finalExpense > 0 ? formatCurrency(r.finalExpense) : "-",
-              }))
-            }}
+            invoiceData={invoiceData}
           />
         </div>
       </article>

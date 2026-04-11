@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireAdmin, AuthError } from "@/lib/auth";
-import { uploadBytesToGoogleDrive } from "@/lib/googleDrive";
+import {
+  uploadBytesToGoogleDrive,
+  ensureDrivePath,
+} from "@/lib/googleDrive";
 
 function isBankStatementStorageMissing(error: unknown) {
   return (
@@ -53,11 +56,18 @@ export async function POST(req: NextRequest) {
     let statementLink: string;
 
     try {
+      const folderId = await ensureDrivePath([
+        "Accounting Platform",
+        "Financial_Records",
+        "Bank_Statements",
+        account.name,
+      ]);
+
       statementLink = await uploadBytesToGoogleDrive({
         fileBuffer: buffer,
         originalName: file.name,
         mimeType: file.type || "application/pdf",
-        folderId: process.env.GOOGLE_DRIVE_BANK_STATEMENTS_FOLDER_ID || null,
+        folderId,
         prefix: `bankstmt-${accountId}-${month}`,
       });
     } catch (err) {

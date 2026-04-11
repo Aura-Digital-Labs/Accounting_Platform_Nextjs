@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, AuthError } from "@/lib/auth";
-import { uploadBytesToGoogleDrive } from "@/lib/googleDrive";
+import {
+  uploadBytesToGoogleDrive,
+  ensureDrivePath,
+} from "@/lib/googleDrive";
 
 /**
  * POST /api/client-payments — Submit client payment (client only)
@@ -69,11 +72,18 @@ export async function POST(req: NextRequest) {
     if (documentFile && documentFile.size > 0) {
       const buffer = Buffer.from(await documentFile.arrayBuffer());
       try {
+        const folderId = await ensureDrivePath([
+          "Accounting Platform",
+          "Projects",
+          project.name,
+          "Payments",
+        ]);
+
         documentLink = await uploadBytesToGoogleDrive({
           fileBuffer: buffer,
           originalName: documentFile.name,
           mimeType: documentFile.type,
-          folderId: process.env.GOOGLE_DRIVE_CLIENT_PAYMENTS_FOLDER_ID || null,
+          folderId,
           prefix: `payment-${currentUser.id}-${projectId}`,
         });
       } catch (err) {
