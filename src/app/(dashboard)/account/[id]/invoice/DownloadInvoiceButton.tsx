@@ -30,7 +30,7 @@ export default function DownloadInvoiceButton({
 }) {
   const [isUploading, setIsUploading] = useState(false);
 
-  const handleDownload = async () => {
+  const handleDownload = async (action: 'download' | 'email' = 'download') => {
     setIsUploading(true);
     const doc = new jsPDF({ format: "a4", unit: "mm" });
 
@@ -202,46 +202,63 @@ export default function DownloadInvoiceButton({
     // Get the PDF as a Blob
     const pdfBlob = doc.output("blob");
 
-    // Trigger Download locally
+    // Default: Trigger Download locally
     const fileName = `${invoiceData.invoiceNo}.pdf`;
-    doc.save(fileName);
+    if (action === 'download') {
+      doc.save(fileName);
+    }
 
-    // Upload to Google Drive via our API
+    // Upload to Google Drive via our API, or Email via our new API
     try {
       const formData = new FormData();
-      // Remove any specific splitting and use project name for folder structure
-      // or at least properly.
       formData.append("projectId", invoiceData.projectId);
       formData.append("projectName", invoiceData.projectName);
       formData.append("invoiceNo", invoiceData.invoiceNo);
       formData.append("file", new File([pdfBlob], fileName, { type: "application/pdf" }));
 
-      const res = await fetch("/api/invoices/upload", {
+      const endpoint = action === 'email' ? "/api/invoices/send-email" : "/api/invoices/upload";
+      
+      const res = await fetch(endpoint, {
         method: "POST",
         body: formData,
       });
 
       if (!res.ok) {
-        console.error("Failed to upload invoice to Google Drive");
+        console.error(`Failed to ${action === 'email' ? 'email' : 'upload'} invoice`);
       } else {
+        if (action === 'email') {
+          alert('Invoice has been emailed to all clients and saved in Google Drive.');
+        }
         // Refresh page to get the updated invoice sequence
         window.location.reload();
       }
     } catch (err) {
-      console.error("Error uploading to drive", err);
+      console.error(`Error with ${action} action:`, err);
     } finally {
       setIsUploading(false);
     }
   };
 
   return (
-    <button
-      className={styles.linkButton}
-      disabled={disabled || isUploading}
-      onClick={handleDownload}
-      title={disabled ? "Cannot download: Project finance status is Outdated" : "Download as PDF"}
-    >
-      {isUploading ? "Downloading & Saving to Drive..." : "Download Invoice (PDF)"}
-    </button>
+    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+      <button
+        className={styles.linkButton}
+        disabled={disabled || isUploading}
+        onClick={() => handleDownload('download')}
+        title={disabled ? "Cannot download: Project finance status is Outdated" : "Download as PDF"}
+      >
+        {isUploading ? "Processing..." : "Download Invoice"}
+      </button>
+
+      <button
+        className={styles.linkButton}
+        disabled={disabled || isUploading}
+        onClick={() => handleDownload('email')}
+        title={disabled ? "Cannot email: Project finance status is Outdated" : "Email & Save to Drive"}
+        style={{ backgroundColor: '#0EA5E9', color: 'white', border: 'none' }}
+      >
+        {isUploading ? "Processing..." : "Email Invoice to Clients"}
+      </button>
+    </div>
   );
 }
