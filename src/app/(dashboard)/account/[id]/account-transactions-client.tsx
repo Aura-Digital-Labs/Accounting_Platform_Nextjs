@@ -280,8 +280,6 @@ export default function AccountTransactionsClient({ accountId, isReadOnly = fals
           type: accountForm.type,
           subType: accountForm.subType,
           isCurrent: accountForm.isCurrent,
-          subType: accountForm.subType,
-          isCurrent: accountForm.isCurrent,
           description: accountForm.description || null,
           isPaymentAccepting: accountForm.isPaymentAccepting,
           isPettyCash: accountForm.isPettyCash,

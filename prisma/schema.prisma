@@ -1,11 +1,3 @@
-// ============================================================
-// Prisma Schema — Project-Based Accounting System
-// ============================================================
-// Mirrors the existing SQLAlchemy models exactly.
-// Run `npx prisma db push` to apply or `npx prisma db pull`
-// to introspect an existing database.
-// ============================================================
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -15,7 +7,634 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ────────────────────────────── Enums ──────────────────────────────
+model User {
+  id                                             String                     @id @default(cuid())
+  email                                          String                     @unique
+  username                                       String                     @unique
+  password                                       String
+  name                                           String
+  role                                           Role                       @default(CLIENT)
+  employmentType                                 EmploymentType?
+  monthlySalary                                  Float?
+  bankAccountName                                String?
+  bankAccountNumber                              String?
+  bankName                                       String?
+  bankBranch                                     String?
+  bankNotes                                      String?
+  level                                          Int?                       @default(1)
+  lastSeen                                       DateTime                   @default(now())
+  post                                           String?
+  pettyCashAccountId                             Int?                       @map("petty_cash_account_id")
+  isActive                                       Boolean                    @default(true) @map("is_active")
+  createdAt                                      DateTime                   @default(now())
+  updatedAt                                      DateTime                   @updatedAt
+  clientPayments                                 ClientPayment[]            @relation("ClientPayments")
+  confirmedPayments                              ClientPayment[]            @relation("PaymentConfirmedBy")
+  EmployeeReview_EmployeeReview_employeeIdToUser EmployeeReview[]           @relation("EmployeeReview_employeeIdToUser")
+  EmployeeReview_EmployeeReview_reviewerIdToUser EmployeeReview[]           @relation("EmployeeReview_reviewerIdToUser")
+  KPIEvaluation                                  KPIEvaluation[]
+  MonitoredUser_MonitoredUser_addedByToUser      MonitoredUser[]            @relation("MonitoredUser_addedByToUser")
+  MonitoredUser_MonitoredUser_userIdToUser       MonitoredUser?             @relation("MonitoredUser_userIdToUser")
+  MonthlySalary                                  MonthlySalary[]
+  Notification                                   Notification[]
+  ownedProjects                                  Project[]                  @relation("ProjectClient")
+  Project_Project_createdByIdToUser              Project[]                  @relation("Project_createdByIdToUser")
+  Project_Project_projectManagerIdToUser         Project[]                  @relation("Project_projectManagerIdToUser")
+  assignments                                    ProjectAssignment[]
+  ProjectWage                                    ProjectWage[]
+  Signature                                      Signature[]
+  pettyCashAccount                               Account?                   @relation("UserPettyCash", fields: [pettyCashAccountId], references: [id])
+  auditLogs                                      AuditLog[]
+  approvedExpenses                               Expense[]                  @relation("PMApprovedExpenses")
+  expenses                                       Expense[]                  @relation("EmployeeExpenses")
+  createdFixedDeposits                           FixedDeposit[]             @relation("FDCreator")
+  managedProjects                                ProjectManagerAssignment[]
+
+  @@index([email])
+  @@index([username])
+  @@map("User")
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  action       String
+  resourceType String   @map("resource_type") @db.VarChar(64)
+  resourceId   String   @map("resource_id")
+  description  String
+  oldValues    Json?    @map("old_values")
+  newValues    Json?    @map("new_values")
+  ipAddress    String?  @map("ip_address") @db.VarChar(45)
+  userAgent    String?  @map("user_agent")
+  status       String   @db.VarChar(32)
+  errorMessage String?  @map("error_message")
+  timestamp    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([resourceType])
+  @@index([resourceId])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+model Account {
+  id                         Int                @id @default(autoincrement())
+  code                       String             @unique @db.VarChar(64)
+  name                       String             @db.VarChar(255)
+  type                       AccountType
+  description                String?
+  projectId                  Int?               @unique @map("project_id")
+  budget                     Decimal?           @db.Decimal(14, 2)
+  includeCashFlow            Boolean            @default(false) @map("include_in_cash_flow")
+  isPaymentAccepting         Boolean            @default(false) @map("is_payment_accepting")
+  isPettyCash                Boolean            @default(false) @map("is_petty_cash")
+  isClosed                   Boolean            @default(false) @map("is_closed")
+  closedAt                   DateTime?          @map("closed_at")
+  accountNumber              String?            @map("account_number") @db.VarChar(50)
+  accountHolderName          String?            @map("account_holder_name") @db.VarChar(255)
+  bankBranch                 String?            @map("bank_branch") @db.VarChar(255)
+  bankName                   String?            @map("bank_name") @db.VarChar(255)
+  isCurrent                  Boolean            @default(true) @map("is_current")
+  subType                    String?            @map("sub_type") @db.VarChar(100)
+  clientPayments             ClientPayment[]    @relation("PaymentAccount")
+  linkedProject              Project?           @relation("ProjectAccount")
+  pettyCashUsers             User[]             @relation("UserPettyCash")
+  bankStatements             BankStatement[]
+  asFDAccount                FixedDeposit[]     @relation("FDAccount")
+  asInitialInvestmentAccount FixedDeposit[]     @relation("InitialInvestmentAccount")
+  entries                    TransactionEntry[]
+
+  @@index([code])
+  @@map("accounts")
+}
+
+model Transaction {
+  id           Int                @id @default(autoincrement())
+  reference    String?            @unique @db.VarChar(100)
+  description  String
+  createdBy    String             @map("created_by")
+  sourceType   String             @map("source_type") @db.VarChar(32)
+  sourceId     String?            @map("source_id")
+  postedAt     DateTime           @default(now()) @map("posted_at")
+  documentLink String?            @map("document_link") @db.VarChar(500)
+  entries      TransactionEntry[]
+
+  @@map("transactions")
+}
+
+model TransactionEntry {
+  id            Int         @id @default(autoincrement())
+  transactionId Int         @map("transaction_id")
+  accountId     Int         @map("account_id")
+  entryType     EntryType   @map("entry_type")
+  amount        Decimal     @db.Decimal(14, 2)
+  isChecked     Boolean     @default(false) @map("is_checked")
+  account       Account     @relation(fields: [accountId], references: [id])
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@index([accountId])
+  @@map("transaction_entries")
+}
+
+model Project {
+  id                                  String                     @id @default(cuid())
+  code                                String?                    @unique @db.VarChar(32)
+  name                                String
+  description                         String?
+  budget                              Float?
+  status                              ProjectStatus              @default(IN_DISCUSSION)
+  financialStatus                     FinancialStatus            @default(NOT_PAID)
+  createdById                         String
+  projectManagerId                    String?
+  progressDiscussion                  Boolean                    @default(false)
+  progressEstimation                  Boolean                    @default(false)
+  progressEmployeeAllocation          Boolean                    @default(false)
+  progressDevelopment                 Boolean                    @default(false)
+  progressTesting                     Boolean                    @default(false)
+  progressDeployment                  Boolean                    @default(false)
+  createdAt                           DateTime                   @default(now())
+  updatedAt                           DateTime                   @updatedAt
+  accountId                           Int                        @unique @map("account_id")
+  clientId                            String?                    @map("client_id")
+  clientPassword                      String?                    @map("client_password") @db.VarChar(255)
+  financeStatus                       String                     @map("finance_status") @db.VarChar(255)
+  lastInvoiceNo                       String?                    @map("last_invoice_no") @db.VarChar(255)
+  invoiceCount                        Int                        @default(0) @map("invoice_count")
+  AdminPayment                        AdminPayment[]
+  Agreement                           Agreement[]
+  payments                            ClientPayment[]
+  Equipment                           Equipment[]
+  Estimate                            Estimate?
+  account                             Account                    @relation("ProjectAccount", fields: [accountId], references: [id])
+  client                              User?                      @relation("ProjectClient", fields: [clientId], references: [id])
+  User_Project_createdByIdToUser      User                       @relation("Project_createdByIdToUser", fields: [createdById], references: [id])
+  User_Project_projectManagerIdToUser User?                      @relation("Project_projectManagerIdToUser", fields: [projectManagerId], references: [id])
+  assignments                         ProjectAssignment[]
+  ProjectBankAssignment               ProjectBankAssignment[]
+  ProjectLink                         ProjectLink[]
+  ProjectWage                         ProjectWage[]
+  expenses                            Expense[]
+  managers                            ProjectManagerAssignment[]
+
+  @@map("Project")
+}
+
+model ProjectAssignment {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([projectId, userId], name: "uq_project_user")
+  @@map("ProjectAssignment")
+}
+
+model ProjectManagerAssignment {
+  id        Int     @id @default(autoincrement())
+  projectId String  @map("project_id")
+  managerId String  @map("manager_id")
+  manager   User    @relation(fields: [managerId], references: [id])
+  project   Project @relation(fields: [projectId], references: [id])
+
+  @@unique([projectId, managerId], name: "uq_project_manager")
+  @@map("project_manager_assignments")
+}
+
+model Expense {
+  id                   String        @id @default(cuid())
+  projectId            String        @map("project_id")
+  employeeId           String        @map("employee_id")
+  description          String
+  amount               Decimal       @db.Decimal(14, 2)
+  expenseDate          DateTime      @map("expense_date") @db.Date
+  receiptPath          String?       @map("receipt_path") @db.VarChar(500)
+  paymentSource        String        @default("personal") @map("payment_source") @db.VarChar(32)
+  status               ExpenseStatus @default(pending)
+  createdTransactionId Int?          @map("created_transaction_id")
+  approvedByPmId       String?       @map("approved_by_pm_id")
+  finalExpenseAmount   Decimal?      @map("final_expense_amount") @db.Decimal(14, 2)
+  pmApprovalDate       DateTime?     @map("pm_approval_date")
+  pmApprovalNotes      String?       @map("pm_approval_notes")
+  approvedByPm         User?         @relation("PMApprovedExpenses", fields: [approvedByPmId], references: [id])
+  employee             User          @relation("EmployeeExpenses", fields: [employeeId], references: [id])
+  project              Project       @relation(fields: [projectId], references: [id])
+
+  @@map("expenses")
+}
+
+model ClientPayment {
+  id                   String              @id @default(cuid())
+  projectId            String
+  clientId             String
+  paymentAccountId     Int                 @map("payment_account_id")
+  description          String?
+  documentLink         String?             @map("document_link") @db.VarChar(500)
+  title                String
+  amount               Float
+  status               ClientPaymentStatus @default(pending)
+  createdTransactionId Int?                @map("created_transaction_id")
+  confirmed            Boolean             @default(false)
+  confirmedAt          DateTime?
+  confirmedBy          String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  pmApprovalNotes      String?             @map("pm_approval_notes")
+  client               User                @relation("ClientPayments", fields: [clientId], references: [id])
+  confirmedByUser      User?               @relation("PaymentConfirmedBy", fields: [confirmedBy], references: [id])
+  paymentAccount       Account             @relation("PaymentAccount", fields: [paymentAccountId], references: [id])
+  project              Project             @relation(fields: [projectId], references: [id])
+
+  @@index([clientId])
+  @@index([projectId])
+  @@map("ClientPayment")
+}
+
+model BankStatement {
+  id            Int      @id @default(autoincrement())
+  accountId     Int      @map("account_id")
+  month         String   @db.VarChar(7)
+  statementLink String   @map("statement_link") @db.VarChar(500)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  account       Account  @relation(fields: [accountId], references: [id])
+
+  @@map("bank_statements")
+}
+
+model FixedDeposit {
+  id                         Int      @id @default(autoincrement())
+  bankName                   String   @map("bank_name") @db.VarChar(255)
+  accountNumber              String   @map("account_number") @db.VarChar(255)
+  initialInvestmentAccountId Int      @map("initial_investment_account_id")
+  fdAccountId                Int      @map("fd_account_id")
+  startingDate               DateTime @map("starting_date") @db.Date
+  periodType                 String   @map("period_type") @db.VarChar(10)
+  periodValue                Int      @map("period_value")
+  amount                     Decimal  @db.Decimal(14, 2)
+  referenceDocumentUrl       String   @map("reference_document_url") @db.VarChar(500)
+  status                     String   @default("ACTIVE") @db.VarChar(20)
+  createdAt                  DateTime @default(now()) @map("created_at")
+  updatedAt                  DateTime @updatedAt @map("updated_at")
+  createdById                String   @map("created_by_id")
+  expectedInterest           Decimal  @default(0) @map("expected_interest") @db.Decimal(14, 2)
+  creator                    User     @relation("FDCreator", fields: [createdById], references: [id])
+  fdAccount                  Account  @relation("FDAccount", fields: [fdAccountId], references: [id])
+  initialInvestmentAccount   Account  @relation("InitialInvestmentAccount", fields: [initialInvestmentAccountId], references: [id])
+
+  @@map("fixed_deposits")
+}
+
+model AdminPayment {
+  id          String   @id
+  projectId   String
+  recordedBy  String
+  title       String
+  amount      Float
+  description String?
+  paymentDate DateTime @default(now()) @db.Timestamp(6)
+  createdAt   DateTime @default(now()) @db.Timestamp(6)
+  updatedAt   DateTime @db.Timestamp(6)
+  Project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Agreement {
+  id          String          @id
+  projectId   String
+  templateId  String
+  title       String
+  content     Json
+  status      AgreementStatus @default(DRAFT)
+  createdAt   DateTime        @default(now()) @db.Timestamp(6)
+  updatedAt   DateTime        @db.Timestamp(6)
+  completedAt DateTime?       @db.Timestamp(6)
+  Project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  Template    Template        @relation(fields: [templateId], references: [id])
+  Signature   Signature[]
+}
+
+model BankAccount {
+  id                    String                  @id
+  accountName           String
+  accountNumber         String?
+  bankName              String
+  branch                String?
+  notes                 String?
+  createdAt             DateTime                @default(now()) @db.Timestamp(6)
+  updatedAt             DateTime                @db.Timestamp(6)
+  balance               Float                   @default(0.0)
+  maintainerName        String?
+  BankTransaction       BankTransaction[]
+  ProjectBankAssignment ProjectBankAssignment[]
+}
+
+model BankTransaction {
+  id            String          @id
+  bankAccountId String
+  date          DateTime        @db.Timestamp(6)
+  amount        Float
+  type          TransactionType
+  description   String?
+  category      String?
+  createdAt     DateTime        @default(now()) @db.Timestamp(6)
+  updatedAt     DateTime        @db.Timestamp(6)
+  BankAccount   BankAccount     @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+
+  @@index([bankAccountId])
+  @@index([date])
+}
+
+model DismissedWeek {
+  id              String        @id
+  monitoredUserId String
+  weekStartDate   DateTime      @db.Timestamp(6)
+  weekEndDate     DateTime      @db.Timestamp(6)
+  reason          String?
+  dismissedBy     String
+  createdAt       DateTime      @default(now()) @db.Timestamp(6)
+  MonitoredUser   MonitoredUser @relation(fields: [monitoredUserId], references: [id], onDelete: Cascade)
+
+  @@unique([monitoredUserId, weekStartDate])
+  @@index([monitoredUserId])
+  @@index([weekStartDate])
+}
+
+model EmployeeReview {
+  id                                   String         @id
+  employeeId                           String
+  reviewerId                           String
+  rating                               Float
+  comment                              String?
+  createdAt                            DateTime       @default(now()) @db.Timestamp(6)
+  updatedAt                            DateTime       @db.Timestamp(6)
+  monthlySalaryId                      String?        @unique
+  projectWageId                        String?        @unique
+  User_EmployeeReview_employeeIdToUser User           @relation("EmployeeReview_employeeIdToUser", fields: [employeeId], references: [id], onDelete: Cascade)
+  MonthlySalary                        MonthlySalary? @relation(fields: [monthlySalaryId], references: [id], onDelete: Cascade)
+  ProjectWage                          ProjectWage?   @relation(fields: [projectWageId], references: [id], onDelete: Cascade)
+  User_EmployeeReview_reviewerIdToUser User           @relation("EmployeeReview_reviewerIdToUser", fields: [reviewerId], references: [id], onDelete: Cascade)
+}
+
+model Equipment {
+  id            String        @id
+  projectId     String
+  name          String
+  description   String?
+  costPerMonth  Float?
+  handoverDate  DateTime      @db.Timestamp(6)
+  delivered     Boolean       @default(false)
+  deliveredDate DateTime?     @db.Timestamp(6)
+  paid          Boolean       @default(false)
+  paidDate      DateTime?     @db.Timestamp(6)
+  createdAt     DateTime      @default(now()) @db.Timestamp(6)
+  updatedAt     DateTime      @db.Timestamp(6)
+  costPerWeek   Float?
+  fixedPrice    Float?
+  returnDate    DateTime?     @db.Timestamp(6)
+  type          EquipmentType @default(RENTAL)
+  Project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Estimate {
+  id          String   @id
+  name        String   @unique
+  costPerHour Float
+  tasks       Json
+  totalAmount Float
+  totalHours  Float
+  projectId   String?  @unique
+  createdAt   DateTime @default(now()) @db.Timestamp(6)
+  updatedAt   DateTime @db.Timestamp(6)
+  createdById String
+  Project     Project? @relation(fields: [projectId], references: [id])
+
+  @@index([name])
+  @@index([projectId])
+}
+
+model ExternalPayment {
+  id          String        @id
+  payerName   String
+  title       String
+  amount      Float
+  description String?
+  status      PaymentStatus @default(PENDING)
+  paymentDate DateTime      @default(now()) @db.Timestamp(6)
+  paidDate    DateTime?     @db.Timestamp(6)
+  createdAt   DateTime      @default(now()) @db.Timestamp(6)
+  updatedAt   DateTime      @db.Timestamp(6)
+
+  @@index([payerName])
+  @@index([status])
+}
+
+model GeneralPayment {
+  id          String   @id
+  recordedBy  String
+  title       String
+  amount      Float
+  description String?
+  category    String?
+  paymentDate DateTime @default(now()) @db.Timestamp(6)
+  createdAt   DateTime @default(now()) @db.Timestamp(6)
+  updatedAt   DateTime @db.Timestamp(6)
+
+  @@index([category])
+  @@index([paymentDate])
+}
+
+model InventoryItem {
+  id           String   @id
+  name         String
+  description  String?
+  count        Int      @default(0)
+  pricePerItem Float    @default(0.0)
+  totalPrice   Float    @default(0.0)
+  createdAt    DateTime @default(now()) @db.Timestamp(6)
+  updatedAt    DateTime @db.Timestamp(6)
+}
+
+model KPIEvaluation {
+  id                String              @id
+  monitoredUserId   String
+  evaluatedBy       String
+  weekStartDate     DateTime            @db.Timestamp(6)
+  weekEndDate       DateTime            @db.Timestamp(6)
+  overallNotes      String?
+  createdAt         DateTime            @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime            @db.Timestamp(6)
+  User              User                @relation(fields: [evaluatedBy], references: [id], onDelete: Cascade)
+  MonitoredUser     MonitoredUser       @relation(fields: [monitoredUserId], references: [id], onDelete: Cascade)
+  KPIEvaluationItem KPIEvaluationItem[]
+
+  @@unique([monitoredUserId, weekStartDate])
+  @@index([monitoredUserId])
+  @@index([weekStartDate])
+}
+
+model KPIEvaluationItem {
+  id             String        @id
+  evaluationId   String
+  kpiIndicatorId String
+  value          Float
+  notes          String?
+  createdAt      DateTime      @default(now()) @db.Timestamp(6)
+  KPIEvaluation  KPIEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  KPIIndicator   KPIIndicator  @relation(fields: [kpiIndicatorId], references: [id], onDelete: Cascade)
+
+  @@unique([evaluationId, kpiIndicatorId])
+  @@index([evaluationId])
+  @@index([kpiIndicatorId])
+}
+
+model KPIIndicator {
+  id                String              @id
+  monitoredUserId   String
+  name              String
+  description       String?
+  unit              KPIUnit
+  targetValue       Float?
+  createdAt         DateTime            @default(now()) @db.Timestamp(6)
+  updatedAt         DateTime            @db.Timestamp(6)
+  KPIEvaluationItem KPIEvaluationItem[]
+  MonitoredUser     MonitoredUser       @relation(fields: [monitoredUserId], references: [id], onDelete: Cascade)
+
+  @@index([monitoredUserId])
+}
+
+model MonitoredUser {
+  id                               String          @id
+  userId                           String          @unique
+  addedBy                          String
+  isActive                         Boolean         @default(true)
+  createdAt                        DateTime        @default(now()) @db.Timestamp(6)
+  updatedAt                        DateTime        @db.Timestamp(6)
+  DismissedWeek                    DismissedWeek[]
+  KPIEvaluation                    KPIEvaluation[]
+  KPIIndicator                     KPIIndicator[]
+  User_MonitoredUser_addedByToUser User            @relation("MonitoredUser_addedByToUser", fields: [addedBy], references: [id], onDelete: Cascade)
+  User_MonitoredUser_userIdToUser  User            @relation("MonitoredUser_userIdToUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([addedBy])
+  @@index([userId])
+}
+
+model MonthlySalary {
+  id             String          @id
+  employeeId     String
+  month          String
+  amount         Float
+  paymentStatus  PaymentStatus   @default(PENDING)
+  paidDate       DateTime?       @db.Timestamp(6)
+  notes          String?
+  createdAt      DateTime        @default(now()) @db.Timestamp(6)
+  updatedAt      DateTime        @db.Timestamp(6)
+  EmployeeReview EmployeeReview?
+  User           User            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  WagePayment    WagePayment[]
+
+  @@unique([employeeId, month])
+}
+
+model Notification {
+  id        String           @id
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  link      String?
+  metadata  Json?
+  createdAt DateTime         @default(now()) @db.Timestamp(6)
+  User      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([userId, read])
+}
+
+model ProjectBankAssignment {
+  id            String      @id
+  projectId     String
+  bankAccountId String
+  createdAt     DateTime    @default(now()) @db.Timestamp(6)
+  BankAccount   BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  Project       Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, bankAccountId])
+}
+
+model ProjectLink {
+  id         String   @id
+  projectId  String
+  title      String
+  url        String
+  isEstimate Boolean  @default(false)
+  createdAt  DateTime @default(now()) @db.Timestamp(6)
+  updatedAt  DateTime @db.Timestamp(6)
+  Project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ProjectWage {
+  id             String          @id
+  projectId      String
+  employeeId     String
+  amount         Float
+  description    String?
+  paymentStatus  PaymentStatus   @default(PENDING)
+  paidDate       DateTime?       @db.Timestamp(6)
+  createdAt      DateTime        @default(now()) @db.Timestamp(6)
+  updatedAt      DateTime        @db.Timestamp(6)
+  EmployeeReview EmployeeReview?
+  User           User            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  Project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  WagePayment    WagePayment[]
+
+  @@unique([projectId, employeeId])
+}
+
+model Signature {
+  id          String    @id
+  agreementId String
+  userId      String
+  signerName  String
+  confirmed   Boolean   @default(false)
+  confirmText String?
+  signedAt    DateTime? @db.Timestamp(6)
+  createdAt   DateTime  @default(now()) @db.Timestamp(6)
+  Agreement   Agreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  User        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([agreementId, userId])
+}
+
+model Template {
+  id        String      @id
+  name      String
+  type      String
+  content   Json
+  isPremade Boolean     @default(false)
+  createdAt DateTime    @default(now()) @db.Timestamp(6)
+  updatedAt DateTime    @db.Timestamp(6)
+  Agreement Agreement[]
+}
+
+model WagePayment {
+  id              String         @id
+  projectWageId   String?
+  monthlySalaryId String?
+  amount          Float
+  paidDate        DateTime       @default(now()) @db.Timestamp(6)
+  notes           String?
+  createdAt       DateTime       @default(now()) @db.Timestamp(6)
+  updatedAt       DateTime       @db.Timestamp(6)
+  MonthlySalary   MonthlySalary? @relation(fields: [monthlySalaryId], references: [id], onDelete: Cascade)
+  ProjectWage     ProjectWage?   @relation(fields: [projectWageId], references: [id], onDelete: Cascade)
+}
 
 enum UserRole {
   admin             @map("ADMIN")
@@ -64,306 +683,73 @@ enum ClientPaymentStatus {
   @@map("clientpaymentstatus")
 }
 
-// ────────────────────────────── User ──────────────────────────────
-
-model User {
-  id                 String    @id @default(cuid()) @db.Text
-  email              String    @unique @db.Text
-  username           String?   @unique @db.Text
-  password           String    @db.Text
-  name               String    @db.Text
-  role               UserRole  @default(employee)
-  employmentType     String?   @db.Text
-  monthlySalary      Float?
-  bankAccountName    String?   @db.Text
-  bankAccountNumber  String?   @db.Text
-  bankName           String?   @db.Text
-  bankBranch         String?   @db.Text
-  bankNotes          String?   @db.Text
-  level              Int?
-  lastSeen           DateTime?
-  post               String?   @db.Text
-  isActive           Boolean   @default(true) @map("is_active")
-  pettyCashAccountId Int?      @map("petty_cash_account_id")
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-
-  // Relations
-  pettyCashAccount     Account?                   @relation("UserPettyCash", fields: [pettyCashAccountId], references: [id])
-  assignments          ProjectAssignment[]
-  expenses             Expense[]                  @relation("EmployeeExpenses")
-  clientPayments       ClientPayment[]            @relation("ClientPayments")
-  ownedProjects        Project[]                  @relation("ProjectClient")
-  managedProjects      ProjectManagerAssignment[]
-  approvedExpenses     Expense[]                  @relation("PMApprovedExpenses")
-  confirmedPayments    ClientPayment[]            @relation("PaymentConfirmedBy")
-  auditLogs            AuditLog[]
-  createdFixedDeposits FixedDeposit[]             @relation("FDCreator")
-
-  @@index([email])
-  @@index([username])
-  @@map("User")
+enum AgreementStatus {
+  DRAFT
+  PENDING
+  SIGNED
+  COMPLETED
 }
 
-// ────────────────────────────── Audit Log ──────────────────────────────
-
-model AuditLog {
-  id           String   @id @default(cuid()) @db.Text
-  userId       String   @map("user_id") @db.Text
-  action       String   @db.Text
-  resourceType String   @map("resource_type") @db.VarChar(64)
-  resourceId   String?  @map("resource_id") @db.Text
-  description  String?  @db.Text
-  oldValues    Json?    @map("old_values")
-  newValues    Json?    @map("new_values")
-  ipAddress    String?  @map("ip_address") @db.VarChar(45)
-  userAgent    String?  @map("user_agent") @db.Text
-  status       String   @db.VarChar(32)
-  errorMessage String?  @map("error_message") @db.Text
-  timestamp    DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
-
-  @@index([userId])
-  @@index([resourceType])
-  @@index([resourceId])
-  @@index([timestamp])
-  @@map("audit_logs")
+enum EmploymentType {
+  CONTRACT
+  MONTHLY
 }
 
-// ────────────────────────────── Account ──────────────────────────────
-
-model Account {
-  id                 Int         @id @default(autoincrement())
-  code               String      @unique @db.VarChar(64)
-  name               String      @db.VarChar(255)
-  type               AccountType
-  subType            String?     @map("sub_type") @db.VarChar(100)
-  isCurrent          Boolean?    @default(true) @map("is_current")
-  description        String?     @db.Text
-  projectId          Int?        @unique @map("project_id")
-  budget             Decimal?    @db.Decimal(14, 2)
-  includeCashFlow    Boolean     @default(false) @map("include_in_cash_flow")
-  isPaymentAccepting Boolean     @default(false) @map("is_payment_accepting")
-  isPettyCash        Boolean     @default(false) @map("is_petty_cash")
-  isClosed           Boolean     @default(false) @map("is_closed")
-  closedAt           DateTime?   @map("closed_at")
-  accountNumber      String?     @map("account_number") @db.VarChar(50)
-  accountHolderName  String?     @map("account_holder_name") @db.VarChar(255)
-  bankName           String?     @map("bank_name") @db.VarChar(255)
-  bankBranch         String?     @map("bank_branch") @db.VarChar(255)
-
-  // Relations
-  entries                    TransactionEntry[]
-  bankStatements             BankStatement[]
-  pettyCashUsers             User[]             @relation("UserPettyCash")
-  clientPayments             ClientPayment[]    @relation("PaymentAccount")
-  linkedProject              Project?           @relation("ProjectAccount")
-  asInitialInvestmentAccount FixedDeposit[]     @relation("InitialInvestmentAccount")
-  asFDAccount                FixedDeposit[]     @relation("FDAccount")
-
-  @@index([code])
-  @@map("accounts")
+enum EquipmentType {
+  RENTAL
+  PURCHASE
 }
 
-// ────────────────────────────── Transaction ──────────────────────────────
-
-model Transaction {
-  id           Int      @id @default(autoincrement())
-  reference    String?  @unique @db.VarChar(100)
-  description  String   @db.Text
-  createdBy    String   @map("created_by") @db.Text
-  sourceType   String?  @map("source_type") @db.VarChar(32)
-  sourceId     String?  @map("source_id") @db.Text
-  postedAt     DateTime @default(now()) @map("posted_at")
-  documentLink String?  @map("document_link") @db.VarChar(500)
-
-  // Relations — cascade delete entries when transaction is deleted
-  entries TransactionEntry[]
-
-  @@map("transactions")
+enum FinancialStatus {
+  NOT_PAID
+  ADVANCED_PAID
+  PAYMENT_90_PERCENT
+  FULL_PAYMENT_DONE
 }
 
-// ────────────────────────────── TransactionEntry ──────────────────────────────
-
-model TransactionEntry {
-  id            Int       @id @default(autoincrement())
-  transactionId Int       @map("transaction_id")
-  accountId     Int       @map("account_id")
-  entryType     EntryType @map("entry_type")
-  amount        Decimal   @db.Decimal(14, 2)
-  isChecked     Boolean   @default(false) @map("is_checked")
-
-  // Relations
-  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  account     Account     @relation(fields: [accountId], references: [id])
-
-  @@index([transactionId])
-  @@index([accountId])
-  @@map("transaction_entries")
+enum KPIUnit {
+  COUNT
+  PERCENTAGE
+  TIME
+  UPDOWN
 }
 
-// ────────────────────────────── Project ──────────────────────────────
-
-model Project {
-  id                         String   @id @default(cuid()) @db.Text
-  code                       String?  @unique @db.VarChar(32)
-  name                       String   @db.Text
-  description                String?  @db.Text
-  budget                     Float?   @default(0)
-  status                     String?  @db.Text
-  financialStatus            String?  @db.Text
-  financeStatus              String?  @map("finance_status") @db.VarChar(255)
-  createdById                String?  @db.Text
-  projectManagerId           String?  @db.Text
-  progressDiscussion         Boolean  @default(false)
-  progressEstimation         Boolean  @default(false)
-  progressEmployeeAllocation Boolean  @default(false)
-  progressDevelopment        Boolean  @default(false)
-  progressTesting            Boolean  @default(false)
-  progressDeployment         Boolean  @default(false)
-  createdAt                  DateTime @default(now())
-  updatedAt                  DateTime @updatedAt
-  accountId                  Int      @unique @map("account_id")
-  clientId                   String?  @map("client_id") @db.Text
-  clientPassword             String?  @map("client_password") @db.VarChar(255)
-  lastInvoiceNo              String?  @map("last_invoice_no") @db.VarChar(255)
-  invoiceCount               Int      @default(0) @map("invoice_count")
-
-  // Relations
-  account     Account                    @relation("ProjectAccount", fields: [accountId], references: [id])
-  client      User?                      @relation("ProjectClient", fields: [clientId], references: [id])
-  assignments ProjectAssignment[]
-  expenses    Expense[]
-  payments    ClientPayment[]
-  managers    ProjectManagerAssignment[]
-
-  @@map("Project")
+enum NotificationType {
+  PROJECT_ASSIGNED
+  WAGE_ADDED
+  SALARY_PAID
+  WAGE_PAID
+  EQUIPMENT_ADDED
+  AGREEMENT_CREATED
+  AGREEMENT_SIGNED
+  PROJECT_STATUS_CHANGED
+  REVIEW_RECEIVED
+  PAYMENT_CONFIRMED
 }
 
-// ────────────────────────────── ProjectAssignment ──────────────────────────────
-
-model ProjectAssignment {
-  id        String   @id @default(cuid()) @db.Text
-  projectId String   @db.Text
-  userId    String   @db.Text
-  createdAt DateTime @default(now())
-
-  project Project @relation(fields: [projectId], references: [id])
-  user    User    @relation(fields: [userId], references: [id])
-
-  @@unique([projectId, userId], name: "uq_project_user")
-  @@map("ProjectAssignment")
+enum PaymentStatus {
+  PENDING
+  PAID
+  PARTIAL
 }
 
-// ────────────────────────────── ProjectManagerAssignment ──────────────────────────────
-
-model ProjectManagerAssignment {
-  id        Int    @id @default(autoincrement())
-  projectId String @map("project_id") @db.Text
-  managerId String @map("manager_id") @db.Text
-
-  project Project @relation(fields: [projectId], references: [id])
-  manager User    @relation(fields: [managerId], references: [id])
-
-  @@unique([projectId, managerId], name: "uq_project_manager")
-  @@map("project_manager_assignments")
+enum ProjectStatus {
+  IN_DISCUSSION
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  ON_HOLD
 }
 
-// ────────────────────────────── Expense ──────────────────────────────
-
-model Expense {
-  id                   String        @id @default(cuid()) @db.Text
-  projectId            String        @map("project_id") @db.Text
-  employeeId           String        @map("employee_id") @db.Text
-  description          String        @db.Text
-  amount               Decimal       @db.Decimal(14, 2)
-  expenseDate          DateTime      @map("expense_date") @db.Date
-  receiptPath          String?       @map("receipt_path") @db.VarChar(500)
-  paymentSource        String        @default("personal") @map("payment_source") @db.VarChar(32)
-  status               ExpenseStatus @default(pending)
-  createdTransactionId Int?          @map("created_transaction_id")
-  approvedByPmId       String?       @map("approved_by_pm_id") @db.Text
-  finalExpenseAmount   Decimal?      @map("final_expense_amount") @db.Decimal(14, 2)
-  pmApprovalDate       DateTime?     @map("pm_approval_date")
-  pmApprovalNotes      String?       @map("pm_approval_notes") @db.Text
-
-  // Relations
-  project      Project @relation(fields: [projectId], references: [id])
-  employee     User    @relation("EmployeeExpenses", fields: [employeeId], references: [id])
-  approvedByPm User?   @relation("PMApprovedExpenses", fields: [approvedByPmId], references: [id])
-
-  @@map("expenses")
+enum Role {
+  ADMIN
+  CLIENT
+  EMPLOYEE
+  FINANCIAL_OFFICER
+  PROJECT_MANAGER
 }
 
-// ────────────────────────────── ClientPayment ──────────────────────────────
-
-model ClientPayment {
-  id                   String              @id @default(cuid()) @db.Text
-  projectId            String              @db.Text
-  clientId             String              @db.Text
-  paymentAccountId     Int                 @map("payment_account_id")
-  description          String?             @db.Text
-  documentLink         String?             @map("document_link") @db.VarChar(500)
-  title                String              @db.Text
-  amount               Float
-  status               ClientPaymentStatus @default(pending)
-  createdTransactionId Int?                @map("created_transaction_id")
-  confirmed            Boolean             @default(false)
-  confirmedAt          DateTime?
-  confirmedBy          String?             @db.Text
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
-  pmApprovalNotes      String?             @map("pm_approval_notes") @db.Text
-
-  // Relations
-  project         Project @relation(fields: [projectId], references: [id])
-  client          User    @relation("ClientPayments", fields: [clientId], references: [id])
-  paymentAccount  Account @relation("PaymentAccount", fields: [paymentAccountId], references: [id])
-  confirmedByUser User?   @relation("PaymentConfirmedBy", fields: [confirmedBy], references: [id])
-
-  @@map("ClientPayment")
-}
-
-// ────────────────────────────── BankStatement ──────────────────────────────
-
-model BankStatement {
-  id            Int      @id @default(autoincrement())
-  accountId     Int      @map("account_id")
-  month         String   @db.VarChar(7) // Format: YYYY-MM
-  statementLink String   @map("statement_link") @db.VarChar(500)
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  account Account @relation(fields: [accountId], references: [id])
-
-  @@map("bank_statements")
-}
-
-// ────────────────────────────── FixedDeposit ──────────────────────────────
-
-model FixedDeposit {
-  id                         Int      @id @default(autoincrement())
-  bankName                   String   @map("bank_name") @db.VarChar(255)
-  accountNumber              String   @map("account_number") @db.VarChar(255)
-  initialInvestmentAccountId Int      @map("initial_investment_account_id")
-  fdAccountId                Int      @map("fd_account_id")
-  startingDate               DateTime @map("starting_date") @db.Date
-  periodType                 String   @map("period_type") @db.VarChar(10) // 'days' or 'months'
-  periodValue                Int      @map("period_value")
-  amount                     Decimal  @db.Decimal(14, 2)
-  expectedInterest           Decimal  @default(0) @map("expected_interest") @db.Decimal(14, 2)
-  referenceDocumentUrl       String?  @map("reference_document_url") @db.VarChar(500)
-  status                     String   @default("ACTIVE") @db.VarChar(20) // ACTIVE, MATURED, CLOSED
-  createdAt                  DateTime @default(now()) @map("created_at")
-  updatedAt                  DateTime @updatedAt @map("updated_at")
-  createdById                String   @map("created_by_id") @db.Text
-
-  // Relations
-  initialInvestmentAccount Account @relation("InitialInvestmentAccount", fields: [initialInvestmentAccountId], references: [id])
-  fdAccount                Account @relation("FDAccount", fields: [fdAccountId], references: [id])
-  creator                  User    @relation("FDCreator", fields: [createdById], references: [id])
-
-  @@map("fixed_deposits")
+enum TransactionType {
+  CREDIT
+  DEBIT
 }

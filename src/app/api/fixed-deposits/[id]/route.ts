@@ -14,10 +14,9 @@ export async function PUT(
 ) {
   try {
     const session = await getServerSession();
-    if (!session || !["admin", "financial_officer"].includes(session.user.role)) {
+    if (!session || !["admin", "financial_officer"].includes(String(session.user.role).toLowerCase())) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
-
     const resolvedParams = await params;
     const fdId = parseInt(resolvedParams.id, 10);
     if (isNaN(fdId)) {

@@ -713,7 +713,7 @@ export default function AdminDashboard({
       data.projects.filter(
         (project) =>
           !project.account_id &&
-          (project.status === "IN_PROGRESS" || project.status === "ON_HOLD")
+          (project.status === "IN_PROGRESS" || project.status === "COMPLETED")
       ),
     [data.projects]
   );

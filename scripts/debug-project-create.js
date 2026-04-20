@@ -44,8 +44,10 @@ async function main() {
           name,
           description: null,
           budget: 0,
-          accountId: projectAccount.id,
-          clientId: clientUser.id,
+          account: { connect: { id: projectAccount.id } },
+          client: { connect: { id: clientUser.id } },
+          financeStatus: "Ready to Deliver",
+          User_Project_createdByIdToUser: { connect: { id: admin.id } },
         },
       });
     });

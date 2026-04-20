@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
         const employees = await tx.user.findMany({
           where: {
             id: { in: uniqueEmployeeIds },
-            role: "employee",
+            role: "EMPLOYEE",
           },
           select: { id: true },
         });
@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
         const clients = await tx.user.findMany({
           where: {
             id: { in: uniqueClientIds },
-            role: "client",
+            role: "CLIENT",
           },
           select: { id: true },
         });
@@ -145,8 +145,10 @@ export async function POST(req: NextRequest) {
           name,
           description: description || null,
           budget: normalizedBudget,
-          accountId: projectAccount.id,
-          clientId: primaryClientId,
+          account: { connect: { id: projectAccount.id } },
+          ...(primaryClientId ? { client: { connect: { id: primaryClientId } } } : {}),
+          financeStatus: normalizedBudget === 0 ? "Ready to Deliver" : "Payment Required",
+          User_Project_createdByIdToUser: { connect: { id: currentUser.id } },
         },
       });
 
@@ -230,22 +232,22 @@ export async function POST(req: NextRequest) {
 
             await tx.$executeRaw`
               INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked)
-              VALUES (${firstEntryId}, ${transactionId}, ${projectAccount.id}, ${"debit"}, ${new Decimal(normalizedBudget.toFixed(2))}, ${false})
+              VALUES (${firstEntryId}, ${transactionId}, ${projectAccount.id}, CAST(${"DEBIT"} AS entrytype), ${new Decimal(normalizedBudget.toFixed(2))}, ${false})
             `;
 
             await tx.$executeRaw`
               INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked)
-              VALUES (${firstEntryId + 1}, ${transactionId}, ${adminAccount.id}, ${"credit"}, ${new Decimal(normalizedBudget.toFixed(2))}, ${false})
+              VALUES (${firstEntryId + 1}, ${transactionId}, ${adminAccount.id}, CAST(${"CREDIT"} AS entrytype), ${new Decimal(normalizedBudget.toFixed(2))}, ${false})
             `;
           } else {
             await tx.$executeRaw`
               INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked)
-              VALUES (${transactionId}, ${projectAccount.id}, ${"debit"}, ${new Decimal(normalizedBudget.toFixed(2))}, ${false})
+              VALUES (${transactionId}, ${projectAccount.id}, CAST(${"DEBIT"} AS entrytype), ${new Decimal(normalizedBudget.toFixed(2))}, ${false})
             `;
 
             await tx.$executeRaw`
               INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked)
-              VALUES (${transactionId}, ${adminAccount.id}, ${"credit"}, ${new Decimal(normalizedBudget.toFixed(2))}, ${false})
+              VALUES (${transactionId}, ${adminAccount.id}, CAST(${"CREDIT"} AS entrytype), ${new Decimal(normalizedBudget.toFixed(2))}, ${false})
             `;
           }
         }
@@ -317,8 +319,8 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   try {
     const currentUser = await requireAuth();
-    const isAdminLike =
-      currentUser.role === "admin" || currentUser.role === "financial_officer";
+    const role = String(currentUser.role || "").toLowerCase();
+    const isAdminLike = role === "admin" || role === "financial_officer";
 
     let projects;
     if (isAdminLike) {
@@ -342,7 +344,7 @@ export async function GET() {
           },
         },
       });
-    } else if (currentUser.role === "client") {
+    } else if (role === "client") {
       projects = await prisma.project.findMany({
         where: {
           OR: [
@@ -352,7 +354,7 @@ export async function GET() {
         },
         orderBy: { id: "desc" },
       });
-    } else if (currentUser.role === "project_manager") {
+    } else if (role === "project_manager") {
       const assignments = await prisma.projectManagerAssignment.findMany({
         where: { managerId: currentUser.id },
         select: { projectId: true },
@@ -398,23 +400,23 @@ export async function GET() {
             : [],
           employee_ids: isAdminLike
             ? (projectWithClient.assignments ?? [])
-                .filter((row) => row.user.role === "employee")
+                .filter((row) => String(row.user.role).toLowerCase() === "employee")
                 .map((row) => row.userId)
             : [],
           client_ids: isAdminLike
             ? (projectWithClient.assignments ?? [])
-                .filter((row) => row.user.role === "client")
+                .filter((row) => String(row.user.role).toLowerCase() === "client")
                 .map((row) => row.userId)
             : [],
         };
       }),
     );
   } catch (error: unknown) {
+    console.error("[GET /api/projects] CRASH:", error);
     const currentUser = await requireAuth().catch(() => null);
+    const role = currentUser ? String(currentUser.role || "").toLowerCase() : "";
     const isAdminLike =
-      currentUser &&
-      (currentUser.role === "admin" ||
-        currentUser.role === "financial_officer");
+      currentUser && (role === "admin" || role === "financial_officer");
 
     if (error instanceof AuthError) {
       return NextResponse.json(
@@ -452,7 +454,7 @@ export async function GET() {
           FROM "Project" p
           ORDER BY p."createdAt" DESC
         `)) as typeof rows;
-      } else if (currentUser.role === "client") {
+      } else if (role === "client") {
         rows = (await prisma.$queryRawUnsafe(
           `
           SELECT
@@ -474,9 +476,9 @@ export async function GET() {
              )
           ORDER BY p."createdAt" DESC
         `,
-          currentUser.id,
+          currentUser!.id,
         )) as typeof rows;
-      } else if (currentUser.role === "project_manager") {
+      } else if (role === "project_manager") {
         rows = (await prisma.$queryRawUnsafe(
           `
           SELECT
@@ -493,7 +495,7 @@ export async function GET() {
           WHERE pma.manager_id = $1
           ORDER BY p."createdAt" DESC
         `,
-          currentUser.id,
+          currentUser!.id,
         )) as typeof rows;
       } else {
         rows = (await prisma.$queryRawUnsafe(
@@ -512,7 +514,7 @@ export async function GET() {
           WHERE pa."userId" = $1
           ORDER BY p."createdAt" DESC
         `,
-          currentUser.id,
+          currentUser!.id,
         )) as typeof rows;
       }
 
@@ -539,13 +541,13 @@ export async function GET() {
         current.push(row.userId);
         assignmentsMap.set(row.projectId, current);
 
-        if (row.user.role === "employee") {
+        if (String(row.user.role).toLowerCase() === "employee") {
           const employeeCurrent =
             employeeAssignmentsMap.get(row.projectId) || [];
           employeeCurrent.push(row.userId);
           employeeAssignmentsMap.set(row.projectId, employeeCurrent);
         }
-        if (row.user.role === "client") {
+        if (String(row.user.role).toLowerCase() === "client") {
           const clientCurrent = clientAssignmentsMap.get(row.projectId) || [];
           clientCurrent.push(row.userId);
           clientAssignmentsMap.set(row.projectId, clientCurrent);

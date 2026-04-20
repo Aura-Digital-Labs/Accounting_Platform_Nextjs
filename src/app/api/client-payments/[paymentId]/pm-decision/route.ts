@@ -12,7 +12,7 @@ export async function PATCH(
   try {
     const currentUser = await requireAuth();
 
-    if (currentUser.role !== "project_manager") {
+    if (String(currentUser.role).toLowerCase() !== "project_manager") {
       return NextResponse.json(
         { detail: "Only project managers can make this decision" },
         { status: 403 }

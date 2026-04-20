@@ -16,7 +16,8 @@ const transporter = nodemailer.createTransport({
 export async function POST(req: NextRequest) {
   try {
     const currentUser = await requireAuth();
-    if (currentUser.role !== "admin" && currentUser.role !== "financial_officer") {
+    const role = String(currentUser.role || "").toLowerCase();
+    if (role !== "admin" && role !== "financial_officer") {
       return NextResponse.json({ detail: "Unauthorized" }, { status: 403 });
     }
 

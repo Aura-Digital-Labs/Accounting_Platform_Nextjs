@@ -27,7 +27,7 @@ export async function POST(
     }
 
     const employee = await prisma.user.findUnique({ where: { id: userId } });
-    if (!employee || employee.role !== "employee") {
+    if (!employee || String(employee.role).toLowerCase() !== "employee") {
       return NextResponse.json({ detail: "Employee not found or invalid role" }, { status: 400 });
     }
 

@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   try {
     const currentUser = await requireAuth();
 
-    if (currentUser.role !== "client") {
+    if (String(currentUser.role || "").toLowerCase() !== "client") {
       return NextResponse.json(
         { detail: "Only clients can submit payments" },
         { status: 403 }
@@ -131,10 +131,11 @@ return NextResponse.json(payment, { status: 201 });
 export async function GET() {
   try {
     const currentUser = await requireAuth();
+    const role = String(currentUser.role || "").toLowerCase();
     const isAdminLike =
-      currentUser.role === "admin" || currentUser.role === "financial_officer";
+      role === "admin" || role === "financial_officer";
 
-    if (!isAdminLike && currentUser.role !== "client") {
+    if (!isAdminLike && role !== "client") {
       return NextResponse.json([]);
     }
 

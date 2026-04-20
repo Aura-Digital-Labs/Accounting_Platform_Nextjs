@@ -155,7 +155,7 @@ export async function sendReceiptEmail(paymentId: string, status: "approved" | "
   return { emailSent, receiptLink };
 }
 
-async function generateReceiptPdf(data: any): Promise<Buffer> {
+export async function generateReceiptPdf(data: any): Promise<Buffer> {
   const doc = new jsPDF({ format: "a4", unit: "mm" });
 
   let logoBase64 = "";

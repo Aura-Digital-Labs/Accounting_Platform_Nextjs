@@ -19,7 +19,7 @@ export async function ensureUserAccount(
   let name: string;
   let accountType: "asset" | "liability" | "equity" | "revenue" | "expense";
 
-  switch (role) {
+  switch (String(role).toLowerCase()) {
     case "employee":
       code = `EMP-${userId}`;
       name = `Employee Payable ${nameLabel}`;

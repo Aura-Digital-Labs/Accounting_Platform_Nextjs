@@ -123,17 +123,17 @@ export const authOptions: NextAuthOptions = {
             const createdAdmin = await prisma.user.create({
               data: {
                 email: initialEmail!,
-                username: null,
+                username: initialEmail!,
                 name: initialName,
                 password: await hashPassword(initialPassword!),
-                role: "admin",
+                role: "ADMIN",
               },
             });
 
             try {
               await ensureUserAccount(
                 createdAdmin.id,
-                createdAdmin.role,
+                String(createdAdmin.role).toLowerCase() as any,
                 createdAdmin.name,
               );
             } catch (error) {
@@ -205,7 +205,7 @@ export const authOptions: NextAuthOptions = {
           id: String(user.id),
           email: user.email,
           name: user.name,
-          role: user.role,
+          role: String(user.role).toLowerCase() as any,
         };
       },
     }),

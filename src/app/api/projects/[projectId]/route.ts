@@ -185,24 +185,24 @@ async function syncProjectBudgetPosting(
 
       await tx.$executeRaw(Prisma.sql`
         INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked)
-        VALUES (${firstEntryId}, ${transactionId}, ${input.projectAccountId}, ${"debit"}, ${new Decimal(roundedBudget.toFixed(2))}, ${false})
+        VALUES (${firstEntryId}, ${transactionId}, ${input.projectAccountId}, CAST(${"DEBIT"} AS entrytype), ${new Decimal(roundedBudget.toFixed(2))}, ${false})
       `);
 
       await tx.$executeRaw(Prisma.sql`
         INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked)
-        VALUES (${firstEntryId + 1}, ${transactionId}, ${adminAccount.id}, ${"credit"}, ${new Decimal(roundedBudget.toFixed(2))}, ${false})
+        VALUES (${firstEntryId + 1}, ${transactionId}, ${adminAccount.id}, CAST(${"CREDIT"} AS entrytype), ${new Decimal(roundedBudget.toFixed(2))}, ${false})
       `);
       return;
     }
 
     await tx.$executeRaw(Prisma.sql`
       INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked)
-      VALUES (${transactionId}, ${input.projectAccountId}, ${"debit"}, ${new Decimal(roundedBudget.toFixed(2))}, ${false})
+      VALUES (${transactionId}, ${input.projectAccountId}, CAST(${"DEBIT"} AS entrytype), ${new Decimal(roundedBudget.toFixed(2))}, ${false})
     `);
 
     await tx.$executeRaw(Prisma.sql`
       INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked)
-      VALUES (${transactionId}, ${adminAccount.id}, ${"credit"}, ${new Decimal(roundedBudget.toFixed(2))}, ${false})
+      VALUES (${transactionId}, ${adminAccount.id}, CAST(${"CREDIT"} AS entrytype), ${new Decimal(roundedBudget.toFixed(2))}, ${false})
     `);
   };
 
@@ -475,10 +475,10 @@ export async function PATCH(
         account_id: latestProject.accountId,
         user_ids: assignments.map((row) => row.userId),
         employee_ids: assignments
-          .filter((row) => row.user.role === "employee")
+          .filter((row) => String(row.user.role).toLowerCase() === "employee")
           .map((row) => row.userId),
         client_ids: assignments
-          .filter((row) => row.user.role === "client")
+          .filter((row) => String(row.user.role).toLowerCase() === "client")
           .map((row) => row.userId),
       };
     });

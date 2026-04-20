@@ -45,7 +45,7 @@ async function hasEntryTypeEnum(): Promise<boolean> {
 export async function POST(req: NextRequest, { params }: { params: Promise<{ action: string, id: string }> | { action: string, id: string } }) {
   try {
     const session = await getServerSession();
-    if (!session || !["admin", "financial_officer"].includes(session.user.role)) {
+    if (!session || !["admin", "financial_officer"].includes(String(session.user.role).toLowerCase())) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
@@ -69,8 +69,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
     const manualIntegerIds = await needsManualIntegerIds();
     const hasEnumEntryType = await hasEntryTypeEnum();
 
-    const result = await prisma.$transaction(async (tx) => {
-      // Find or create FD Interest Account (Revenue)
+    const result = await prisma.$transaction(
+      async (tx) => {
+        // Find or create FD Interest Account (Revenue)
       let interestAccount = await tx.account.findUnique({
         where: { code: 'FD-INTEREST-INCOME' }
       });
@@ -106,17 +107,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
 
         const creditFd = {
           accountId: fd.fdAccountId,
-          entryType: hasEnumEntryType ? "credit" : "CREDIT",
+          entryType: "CREDIT",
           amount: Number(fd.amount)
         };
         const creditInterest = {
           accountId: interestAccount.id,
-          entryType: hasEnumEntryType ? "credit" : "CREDIT",
+          entryType: "CREDIT",
           amount: Number(fd.expectedInterest)
         };
         const debitBank = {
           accountId: fd.initialInvestmentAccountId,
-          entryType: hasEnumEntryType ? "debit" : "DEBIT",
+          entryType: "DEBIT",
           amount: totalAmount
         };
 
@@ -134,11 +135,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
             }
           });
 
-          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, $4, $5, $6)`, firstEntryId, entryTxId!, debitBank.accountId, debitBank.entryType, debitBank.amount, false);
-          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, $4, $5, $6)`, firstEntryId + 1, entryTxId!, creditFd.accountId, creditFd.entryType, creditFd.amount, false);
-          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, $4, $5, $6)`, firstEntryId + 2, entryTxId!, creditInterest.accountId, creditInterest.entryType, creditInterest.amount, false);
+          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, CAST($4 AS entrytype), $5, $6)`, firstEntryId, entryTxId!, debitBank.accountId, debitBank.entryType, debitBank.amount, false);
+          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, CAST($4 AS entrytype), $5, $6)`, firstEntryId + 1, entryTxId!, creditFd.accountId, creditFd.entryType, creditFd.amount, false);
+          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, CAST($4 AS entrytype), $5, $6)`, firstEntryId + 2, entryTxId!, creditInterest.accountId, creditInterest.entryType, creditInterest.amount, false);
         } else {
-          await tx.transaction.create({
+          const createdTx = await tx.transaction.create({
             data: {
               ...(transactionId ? { id: transactionId } : {}),
               description: `Closed Fixed Deposit: ${fd.bankName} (${fd.accountNumber})`,
@@ -148,11 +149,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
             }
           });
 
-          const createdTxId = transactionId!;
+          const createdTxId = transactionId || createdTx.id;
 
-          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, $4, $5)`, createdTxId, debitBank.accountId, debitBank.entryType, debitBank.amount, false);
-          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, $4, $5)`, createdTxId, creditFd.accountId, creditFd.entryType, creditFd.amount, false);
-          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, $4, $5)`, createdTxId, creditInterest.accountId, creditInterest.entryType, creditInterest.amount, false);
+          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, CAST($3 AS entrytype), $4, $5)`, createdTxId, debitBank.accountId, debitBank.entryType, debitBank.amount, false);
+          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, CAST($3 AS entrytype), $4, $5)`, createdTxId, creditFd.accountId, creditFd.entryType, creditFd.amount, false);
+          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, CAST($3 AS entrytype), $4, $5)`, createdTxId, creditInterest.accountId, creditInterest.entryType, creditInterest.amount, false);
         }
 
         await tx.account.update({
@@ -201,12 +202,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
         // Credit Interest Account (Revenue) by Interest
         const debitFd = {
           accountId: fd.fdAccountId,
-          entryType: hasEnumEntryType ? "debit" : "DEBIT",
-          amount: Number(fd.expectedInterest)
+          entryType: "DEBIT",
+          amount: Number(fd.amount)
         };
         const creditInterest = {
           accountId: interestAccount.id,
-          entryType: hasEnumEntryType ? "credit" : "CREDIT",
+          entryType: "CREDIT",
           amount: Number(fd.expectedInterest)
         };
 
@@ -225,8 +226,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
             }
           });
 
-          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, $4, $5, $6)`, firstEntryId, entryTxId!, debitFd.accountId, debitFd.entryType, debitFd.amount, false);
-          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, $4, $5, $6)`, firstEntryId + 1, entryTxId!, creditInterest.accountId, creditInterest.entryType, creditInterest.amount, false);
+          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, CAST($4 AS entrytype), $5, $6)`, firstEntryId, entryTxId!, debitFd.accountId, debitFd.entryType, debitFd.amount, false);
+          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, CAST($4 AS entrytype), $5, $6)`, firstEntryId + 1, entryTxId!, creditInterest.accountId, creditInterest.entryType, creditInterest.amount, false);
         } else {
           const createdTx = await tx.transaction.create({
             data: {
@@ -239,8 +240,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
             }
           });
 
-          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, $4, $5)`, createdTx.id, debitFd.accountId, debitFd.entryType, debitFd.amount, false);
-          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, $3, $4, $5)`, createdTx.id, creditInterest.accountId, creditInterest.entryType, creditInterest.amount, false);
+          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, CAST($3 AS entrytype), $4, $5)`, createdTx.id, debitFd.accountId, debitFd.entryType, debitFd.amount, false);
+          await tx.$executeRawUnsafe(`INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked) VALUES ($1, $2, CAST($3 AS entrytype), $4, $5)`, createdTx.id, creditInterest.accountId, creditInterest.entryType, creditInterest.amount, false);
         }
 
         // calculate new start date (day after original expr data)
@@ -271,7 +272,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ act
         });
       }
 
-    });
+    }, { timeout: 30000, maxWait: 10000 });
 
     return NextResponse.json({ message: `Fixed deposit ${action} successful`, result });
   } catch (error: any) {

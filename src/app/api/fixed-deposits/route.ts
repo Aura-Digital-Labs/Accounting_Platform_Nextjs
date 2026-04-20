@@ -45,10 +45,9 @@ async function hasEntryTypeEnum(): Promise<boolean> {
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession();
-    if (!session || !["admin", "financial_officer"].includes(session.user.role)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-    }
-
+      if (!session || !["admin", "financial_officer"].includes(String(session.user.role).toLowerCase())) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+      }
     const fixedDeposits = await prisma.fixedDeposit.findMany({
       where: {
         status: {
@@ -81,10 +80,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession();
-    if (!session || !["admin", "financial_officer"].includes(session.user.role)) {
+    if (!session || !["admin", "financial_officer"].includes(String(session.user.role).toLowerCase())) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
-
     const manualIntegerIds = await needsManualIntegerIds();
     const hasEnumEntryType = await hasEntryTypeEnum();
     
@@ -158,7 +156,7 @@ export async function POST(req: NextRequest) {
           periodValue: parseInt(periodValue),
           amount: parseFloat(amount),
           expectedInterest: parseFloat(expectedInterest),
-          referenceDocumentUrl,
+          referenceDocumentUrl: referenceDocumentUrl || "",
           status: "ACTIVE",
           initialInvestmentAccountId: parseInt(initialInvestmentAccountId),
           fdAccountId: fdAccount.id,
@@ -217,23 +215,23 @@ export async function POST(req: NextRequest) {
 
           await tx.$executeRawUnsafe(`
             INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked)
-            VALUES ($1, $2, $3, $4, $5, $6)
-          `, firstEntryId, entryTxId, fdAccount.id, hasEnumEntryType ? "debit" : "DEBIT", parseFloat(amount), false);
+            VALUES ($1, $2, $3, CAST($4 AS entrytype), $5, $6)
+          `, firstEntryId, entryTxId, fdAccount.id, "DEBIT", parseFloat(amount), false);
 
           await tx.$executeRawUnsafe(`
             INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked)
-            VALUES ($1, $2, $3, $4, $5, $6)
-          `, firstEntryId + 1, entryTxId, parseInt(initialInvestmentAccountId), hasEnumEntryType ? "credit" : "CREDIT", parseFloat(amount), false);
+            VALUES ($1, $2, $3, CAST($4 AS entrytype), $5, $6)
+          `, firstEntryId + 1, entryTxId, parseInt(initialInvestmentAccountId), "CREDIT", parseFloat(amount), false);
         } else {
           await tx.$executeRawUnsafe(`
             INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked)
-            VALUES ($1, $2, $3, $4, $5)
-          `, entryTxId, fdAccount.id, hasEnumEntryType ? "debit" : "DEBIT", parseFloat(amount), false);
+            VALUES ($1, $2, CAST($3 AS entrytype), $4, $5)
+          `, entryTxId, fdAccount.id, "DEBIT", parseFloat(amount), false);
 
           await tx.$executeRawUnsafe(`
             INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked)
-            VALUES ($1, $2, $3, $4, $5)
-          `, entryTxId, parseInt(initialInvestmentAccountId), hasEnumEntryType ? "credit" : "CREDIT", parseFloat(amount), false);
+            VALUES ($1, $2, CAST($3 AS entrytype), $4, $5)
+          `, entryTxId, parseInt(initialInvestmentAccountId), "CREDIT", parseFloat(amount), false);
         }
       }
 

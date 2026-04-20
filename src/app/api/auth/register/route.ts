@@ -30,19 +30,19 @@ export async function POST(req: NextRequest) {
 
     // First user becomes admin
     const userCount = await prisma.user.count();
-    const assignedRole = userCount === 0 ? (role || "admin") : "employee";
+    const assignedRole = userCount === 0 ? (role || "ADMIN") : "EMPLOYEE";
 
     const user = await prisma.user.create({
       data: {
         email,
-        username: username || null,
+        username: username || email,
         name,
         password: await hashPassword(password),
-        role: assignedRole,
+        role: assignedRole.toUpperCase(),
       },
     });
 
-    await ensureUserAccount(user.id, user.role, user.name);
+    await ensureUserAccount(user.id, String(user.role).toLowerCase() as any, user.name);
 
     const { logAuditAction, AuditAction } = await import("@/lib/auditLog");
     await logAuditAction({

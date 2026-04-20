@@ -29,7 +29,7 @@ export async function GET() {
   try {
     const currentUser = await requireAuth();
 
-    if (currentUser.role !== "project_manager") {
+    if (String(currentUser.role).toLowerCase() !== "project_manager") {
       return NextResponse.json(
         { detail: "Only project managers can access this endpoint" },
         { status: 403 }

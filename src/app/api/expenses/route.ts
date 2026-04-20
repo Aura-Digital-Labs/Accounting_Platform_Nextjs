@@ -24,8 +24,9 @@ const SUBMISSION_GROUP_PREFIX = "__submission_group__:";
 export async function POST(req: NextRequest) {
   try {
     const currentUser = await requireAuth();
+    const role = String(currentUser.role || "").toLowerCase();
 
-    if (currentUser.role !== "employee" && currentUser.role !== "project_manager") {
+    if (role !== "employee" && role !== "project_manager") {
       return NextResponse.json(
         { detail: "Only employees and project managers can submit expenses" },
         { status: 403 }
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Employee must be assigned
-    if (currentUser.role === "employee") {
+    if (role === "employee") {
       const assignment = await prisma.projectAssignment.findFirst({
         where: { projectId, userId: currentUser.id },
       });
@@ -86,14 +87,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (currentUser.role === "employee" && paymentSource !== "personal") {
+    if (role === "employee" && paymentSource !== "personal") {
       return NextResponse.json(
         { detail: "Employees can submit expenses only with personal payment source" },
         { status: 400 }
       );
     }
 
-    if (currentUser.role === "project_manager" && paymentSource === "petty_cash") {
+    if (role === "project_manager" && paymentSource === "petty_cash") {
       if (!currentUser.pettyCashAccountId) {
         return NextResponse.json(
           { detail: "No petty cash account assigned to this project manager" },
@@ -222,11 +223,9 @@ return NextResponse.json(expense, { status: 201 });
 export async function GET() {
   try {
     const currentUser = await requireAuth();
-    const isAdminLike =
-      currentUser.role === "admin" || currentUser.role === "financial_officer";
-
+    const role = String(currentUser.role || "").toLowerCase();
+    const isAdminLike = role === "admin" || role === "financial_officer";    
     const hasEnumExpenseStatus = await hasExpenseStatusEnum();
-
     const expenses = hasEnumExpenseStatus
       ? isAdminLike
         ? await prisma.expense.findMany({ orderBy: { id: "desc" } })

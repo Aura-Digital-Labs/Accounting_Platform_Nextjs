@@ -131,13 +131,16 @@ export async function POST(req: NextRequest) {
 
     const hashedPassword = await hashPassword(body.password);
 
+    const roleString = body.role ? body.role.toUpperCase() : "EMPLOYEE";
+    const validRole = ["ADMIN", "CLIENT", "EMPLOYEE", "FINANCIAL_OFFICER", "PROJECT_MANAGER"].includes(roleString) ? roleString : "EMPLOYEE";
+
     const user = (await prisma.user.create({
       data: {
         email: body.email,
-        username: body.username || null,
+        username: body.username || body.email,
         name: name.trim(),
         password: hashedPassword,
-        role: body.role || "employee",
+        role: validRole,
       } as any,
     })) as any;
 

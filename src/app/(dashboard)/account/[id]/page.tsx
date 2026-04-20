@@ -26,5 +26,5 @@ export default async function AccountLedgerPage({
     redirect("/");
   }
 
-  return <AccountTransactionsClient accountId={accountId} isReadOnly={user.role === "admin"} />;
+  return <AccountTransactionsClient accountId={accountId} isReadOnly={String(user.role).toLowerCase() === "admin"} />;
 }

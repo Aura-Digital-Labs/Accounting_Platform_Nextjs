@@ -278,14 +278,14 @@ export async function PATCH(
         for (const entry of entries) {
           await tx.$executeRaw`
             INSERT INTO transaction_entries (id, transaction_id, account_id, entry_type, amount, is_checked)
-            VALUES (${nextEntryId++}, ${id}, ${entry.accountId}, ${String(entry.entryType)}, ${new Decimal(entry.amount.toFixed(2))}, ${false})
+            VALUES (${nextEntryId++}, ${id}, ${entry.accountId}, CAST(${String(entry.entryType).toUpperCase()} AS entrytype), ${new Decimal(entry.amount.toFixed(2))}, ${false})
           `;
         }
       } else {
         for (const entry of entries) {
           await tx.$executeRaw`
             INSERT INTO transaction_entries (transaction_id, account_id, entry_type, amount, is_checked)
-            VALUES (${id}, ${entry.accountId}, ${String(entry.entryType)}, ${new Decimal(entry.amount.toFixed(2))}, ${false})
+            VALUES (${id}, ${entry.accountId}, CAST(${String(entry.entryType).toUpperCase()} AS entrytype), ${new Decimal(entry.amount.toFixed(2))}, ${false})
           `;
         }
       }

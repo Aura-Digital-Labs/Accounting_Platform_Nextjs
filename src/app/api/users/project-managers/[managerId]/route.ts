@@ -21,7 +21,7 @@ export async function PATCH(
       include: { managedProjects: true },
     });
 
-    if (!pm || pm.role !== "project_manager") {
+    if (!pm || String(pm.role).toLowerCase() !== "project_manager") {
       return NextResponse.json({ detail: "Project manager not found" }, { status: 404 });
     }
 

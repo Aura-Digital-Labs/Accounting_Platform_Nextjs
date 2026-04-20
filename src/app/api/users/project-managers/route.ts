@@ -49,16 +49,17 @@ export async function POST(req: NextRequest) {
     const user = await prisma.user.create({
       data: {
         email: normalizedEmail,
+        username: normalizedEmail,
         name: name.trim(),
         password: hashedPassword,
-        role: "project_manager",
+        role: "PROJECT_MANAGER",
         pettyCashAccountId: body.petty_cash_account_id
           ? Number(body.petty_cash_account_id)
           : null,
       },
     });
 
-    await ensureUserAccount(user.id, "employee", user.name);
+    await ensureUserAccount(user.id, "PROJECT_MANAGER" as any, user.name);
 
     return NextResponse.json(
       {

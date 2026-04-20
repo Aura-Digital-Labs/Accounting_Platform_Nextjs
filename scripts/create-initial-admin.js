@@ -27,7 +27,7 @@ async function main() {
           email,
           name,
           password: hashed,
-          role: "admin",
+          role: "ADMIN",
           isActive: true,
         },
       });
@@ -36,10 +36,10 @@ async function main() {
       user = await prisma.user.create({
         data: {
           email,
-          username: null,
+          username: email,
           name,
           password: hashed,
-          role: "admin",
+          role: "ADMIN",
           isActive: true,
         },
       });

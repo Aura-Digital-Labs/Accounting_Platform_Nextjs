@@ -9,7 +9,8 @@ export default async function ClientPaymentsPage() {
     redirect("/login");
   }
 
-  if (session.user.role !== "client") {
+  const role = session.user.role?.toLowerCase() || "";
+  if (role !== "client") {
     redirect("/");
   }
 
