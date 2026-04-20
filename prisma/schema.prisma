@@ -230,7 +230,7 @@ model ClientPayment {
   id                   String              @id @default(cuid())
   projectId            String
   clientId             String
-  paymentAccountId     Int                 @map("payment_account_id")
+  paymentAccountId     Int?                @map("payment_account_id")
   description          String?
   documentLink         String?             @map("document_link") @db.VarChar(500)
   title                String
@@ -245,7 +245,7 @@ model ClientPayment {
   pmApprovalNotes      String?             @map("pm_approval_notes")
   client               User                @relation("ClientPayments", fields: [clientId], references: [id])
   confirmedByUser      User?               @relation("PaymentConfirmedBy", fields: [confirmedBy], references: [id])
-  paymentAccount       Account             @relation("PaymentAccount", fields: [paymentAccountId], references: [id])
+  paymentAccount       Account?            @relation("PaymentAccount", fields: [paymentAccountId], references: [id])
   project              Project             @relation(fields: [projectId], references: [id])
 
   @@index([clientId])
