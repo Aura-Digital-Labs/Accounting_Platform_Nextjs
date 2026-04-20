@@ -3,7 +3,7 @@ import csv
 
 # ====== CONFIG ======
 ORIGINAL_DB = "new"
-MADEUP_DB = "test_db"
+MADEUP_DB = "new_schema_with_original"
 
 SCHEMA = "public"
 
